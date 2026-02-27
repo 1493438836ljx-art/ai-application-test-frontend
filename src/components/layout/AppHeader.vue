@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { Bell, User } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 
@@ -6,7 +6,7 @@ const route = useRoute()
 
 // 根据路由获取页面标题
 const getPageTitle = () => {
-  const titleMap: Record<string, string> = {
+  const titleMap = {
     '/dashboard': '首页',
     '/dataset': '测评集管理',
     '/prompt': 'Prompt管理',

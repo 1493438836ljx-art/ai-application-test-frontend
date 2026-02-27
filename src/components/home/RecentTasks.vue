@@ -1,14 +1,16 @@
-<script setup lang="ts">
+<script setup>
 import { View, VideoPause } from '@element-plus/icons-vue'
-import type { Task, TaskStatus } from '@/types'
 import { ElMessage } from 'element-plus'
 
-defineProps<{
-  tasks: Task[]
-}>()
+defineProps({
+  tasks: {
+    type: Array,
+    required: true
+  }
+})
 
-const getStatusType = (status: TaskStatus): 'success' | 'warning' | 'info' | 'danger' | '' => {
-  const map: Record<TaskStatus, 'success' | 'warning' | 'info' | 'danger' | ''> = {
+const getStatusType = (status) => {
+  const map = {
     pending: 'info',
     running: 'warning',
     completed: 'success',
@@ -18,8 +20,8 @@ const getStatusType = (status: TaskStatus): 'success' | 'warning' | 'info' | 'da
   return map[status]
 }
 
-const getStatusText = (status: TaskStatus): string => {
-  const map: Record<TaskStatus, string> = {
+const getStatusText = (status) => {
+  const map = {
     pending: '等待中',
     running: '运行中',
     completed: '已完成',
@@ -29,11 +31,11 @@ const getStatusText = (status: TaskStatus): string => {
   return map[status]
 }
 
-const handleView = (task: Task) => {
+const handleView = (task) => {
   ElMessage.info(`查看任务: ${task.name}`)
 }
 
-const handleStop = (task: Task) => {
+const handleStop = (task) => {
   ElMessage.warning(`中止任务: ${task.name}`)
 }
 </script>

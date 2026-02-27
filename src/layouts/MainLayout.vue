@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 </script>
@@ -26,7 +26,7 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 }
 
 .layout-aside {
-  background-color: #304156;
+  background: transparent;
   overflow: hidden;
 }
 

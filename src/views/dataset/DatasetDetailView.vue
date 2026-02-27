@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -16,31 +16,30 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
-import type { Dataset } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 
 // 测评集数据（模拟）
-const dataset = ref<Dataset | null>(null)
+const dataset = ref(null)
 
 // 测试数据列表（模拟）
-const testData = ref<any[]>([])
+const testData = ref([])
 
 // 选中的单元格
-const selectedCell = ref<{ row: number; col: number } | null>(null)
+const selectedCell = ref(null)
 
 // 表格编辑模式
 const isTableEditMode = ref(false)
 
 // 编辑中的单元格
-const editingCell = ref<{ row: number; col: number } | null>(null)
+const editingCell = ref(null)
 
 // 编辑内容
 const editContent = ref('')
 
 // 图标映射
-const iconMap: Record<string, any> = {
+const iconMap = {
   ChatDotRound,
   Cpu,
   Document,
@@ -48,7 +47,7 @@ const iconMap: Record<string, any> = {
 }
 
 // 获取图标组件
-const getIconComponent = (iconName: string) => {
+const getIconComponent = (iconName) => {
   return iconMap[iconName] || FolderOpened
 }
 
@@ -63,9 +62,9 @@ const columns = [
 
 // 加载测评集数据
 const loadDataset = () => {
-  const id = route.params.id as string
+  const id = route.params.id
   // 模拟数据
-  const mockDatasets: Record<string, Dataset> = {
+  const mockDatasets = {
     '1': {
       id: '1',
       name: '通用对话测评集',
@@ -117,14 +116,14 @@ const currentTestData = computed(() => {
 const total = computed(() => testData.value.length)
 
 // 处理页码变化
-const handlePageChange = (page: number) => {
+const handlePageChange = (page) => {
   currentPage.value = page
   selectedCell.value = null
   editingCell.value = null
 }
 
 // 处理每页条数变化
-const handleSizeChange = (size: number) => {
+const handleSizeChange = (size) => {
   pageSize.value = size
   currentPage.value = 1
   selectedCell.value = null
@@ -142,7 +141,7 @@ const handleEdit = () => {
 }
 
 // 解析文件数据
-const parseFileData = (file: File, importMode: 'replace' | 'append') => {
+const parseFileData = (file, importMode) => {
   const reader = new FileReader()
   reader.onload = (event) => {
     try {
@@ -158,7 +157,7 @@ const parseFileData = (file: File, importMode: 'replace' | 'append') => {
         ElMessage.error('无法读取工作表')
         return
       }
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
 
       if (jsonData.length < 2) {
         ElMessage.warning('文件内容为空或只有表头')
@@ -166,8 +165,8 @@ const parseFileData = (file: File, importMode: 'replace' | 'append') => {
       }
 
       // 获取表头
-      const headers = jsonData[0] as string[]
-      const headerMap: Record<string, number> = {}
+      const headers = jsonData[0]
+      const headerMap = {}
       headers.forEach((h, i) => {
         if (h) headerMap[h.trim().toLowerCase()] = i
       })
@@ -179,7 +178,7 @@ const parseFileData = (file: File, importMode: 'replace' | 'append') => {
       const difficultyCol = headerMap['difficulty'] ?? headerMap['难度'] ?? 3
 
       // 解析数据行
-      const newRows: any[] = []
+      const newRows = []
       const startId = importMode === 'replace' ? 1 : testData.value.length + 1
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i]
@@ -221,12 +220,12 @@ const parseFileData = (file: File, importMode: 'replace' | 'append') => {
 }
 
 // 选择文件并导入
-const selectFile = (importMode: 'replace' | 'append') => {
+const selectFile = (importMode) => {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = '.xlsx,.xls,.csv'
-  input.onchange = (e: Event) => {
-    const target = e.target as HTMLInputElement
+  input.onchange = (e) => {
+    const target = e.target
     const file = target.files?.[0]
     if (!file) return
     parseFileData(file, importMode)
@@ -256,13 +255,13 @@ const handleImport = () => {
 }
 
 // 选中单元格
-const selectCell = (rowIndex: number, colIndex: number) => {
+const selectCell = (rowIndex, colIndex) => {
   if (!isTableEditMode.value) return
   selectedCell.value = { row: rowIndex, col: colIndex }
 }
 
 // 双击编辑
-const startEdit = (rowIndex: number, colIndex: number) => {
+const startEdit = (rowIndex, colIndex) => {
   if (!isTableEditMode.value) return
   const col = columns[colIndex]
   if (!col || col.key === 'id') return // ID列不可编辑
@@ -345,7 +344,7 @@ const handleDeleteRow = () => {
 }
 
 // 键盘导航
-const handleKeyDown = (e: KeyboardEvent) => {
+const handleKeyDown = (e) => {
   if (!isTableEditMode.value) return
 
   if (editingCell.value) {

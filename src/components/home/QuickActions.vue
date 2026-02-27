@@ -1,22 +1,21 @@
-<script setup lang="ts">
+<script setup>
 import { Plus, Upload, EditPen, Tools } from '@element-plus/icons-vue'
-import type { QuickAction } from '@/types'
 
-const actions: QuickAction[] = [
+const actions = [
   { label: '新建测试任务', icon: 'Plus', route: '/execution' },
   { label: '导入测评集', icon: 'Upload', route: '/dataset' },
   { label: '创建Prompt', icon: 'EditPen', route: '/prompt' },
   { label: '配置环境', icon: 'Tools', route: '/environment' },
 ]
 
-const iconComponents: Record<string, any> = {
+const iconComponents = {
   Plus,
   Upload,
   EditPen,
   Tools,
 }
 
-const getIcon = (iconName: string) => iconComponents[iconName]
+const getIcon = (iconName) => iconComponents[iconName]
 </script>
 
 <template>

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { VideoPlay } from '@element-plus/icons-vue'
 </script>
 

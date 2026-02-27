@@ -1,7 +1,7 @@
-<script setup lang="ts">
+<script setup>
 import { ref, computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   FolderOpened,
   Plus,
@@ -12,13 +12,12 @@ import {
   ChatDotRound,
   Cpu,
 } from '@element-plus/icons-vue'
-import type { Dataset } from '@/types'
 
 const router = useRouter()
 
 // 对话框控制
 const dialogVisible = ref(false)
-const formRef = ref<FormInstance>()
+const formRef = ref()
 const isEditMode = ref(false)
 const editingId = ref('')
 
@@ -28,10 +27,10 @@ const dialogTitle = computed(() => (isEditMode.value ? '编辑测评集' : '新�
 // 表单数据
 const formData = reactive({
   name: '',
-  iconType: 'preset' as 'preset' | 'custom',
+  iconType: 'preset',
   icon: 'ChatDotRound',
   customIconUrl: '',
-  tags: [] as string[],
+  tags: [],
   description: '',
 })
 
@@ -78,7 +77,7 @@ const presetTags = [
 ]
 
 // 表单验证规则
-const formRules: FormRules = {
+const formRules = {
   name: [
     { required: true, message: '请输入测评集名称', trigger: 'blur' },
     { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' },
@@ -107,7 +106,7 @@ const openCreateDialog = () => {
 }
 
 // 打开编辑对话框
-const openEditDialog = (dataset: Dataset) => {
+const openEditDialog = (dataset) => {
   isEditMode.value = true
   editingId.value = dataset.id
   // 填充表单数据
@@ -132,7 +131,7 @@ const resetForm = () => {
 }
 
 // 处理图片上传
-const handleImageUpload = (options: { file: File }) => {
+const handleImageUpload = (options) => {
   const file = options.file
   const isImage = file.type.startsWith('image/')
   const isLt2M = file.size / 1024 / 1024 < 2
@@ -149,7 +148,7 @@ const handleImageUpload = (options: { file: File }) => {
   // 使用 FileReader 转换为 base64
   const reader = new FileReader()
   reader.onload = (e) => {
-    formData.customIconUrl = e.target?.result as string
+    formData.customIconUrl = e.target?.result
   }
   reader.readAsDataURL(file)
 }
@@ -189,7 +188,7 @@ const handleSubmit = async () => {
         }
       } else {
         // 新建模式：创建新数据
-        const newDataset: Dataset = {
+        const newDataset = {
           id: Date.now().toString(),
           name: formData.name,
           iconType: formData.iconType,
@@ -217,12 +216,12 @@ const handleCancel = () => {
 }
 
 // 查看详情
-const handleViewDetail = (id: string) => {
+const handleViewDetail = (id) => {
   router.push(`/dataset/${id}`)
 }
 
 // 删除测评集
-const handleDelete = (dataset: Dataset) => {
+const handleDelete = (dataset) => {
   ElMessageBox.confirm(`确定要删除测评集「${dataset.name}」吗？删除后无法恢复。`, '删除确认', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
@@ -238,11 +237,11 @@ const handleDelete = (dataset: Dataset) => {
 
 // 导入数据集对话框
 const importDialogVisible = ref(false)
-const currentImportDataset = ref<Dataset | null>(null)
+const currentImportDataset = ref(null)
 const selectedSourceDataset = ref('')
 
 // 打开导入对话框
-const openImportDialog = (dataset: Dataset) => {
+const openImportDialog = (dataset) => {
   currentImportDataset.value = dataset
   selectedSourceDataset.value = ''
   importDialogVisible.value = true
@@ -272,9 +271,9 @@ const confirmImport = () => {
 
 // 拆分数据集对话框
 const splitDialogVisible = ref(false)
-const currentSplitDataset = ref<Dataset | null>(null)
+const currentSplitDataset = ref(null)
 const splitForm = reactive({
-  mode: 'ratio' as 'ratio' | 'count',
+  mode: 'ratio',
   ratio: 50,
   count: 10,
   name1: '',
@@ -282,7 +281,7 @@ const splitForm = reactive({
 })
 
 // 打开拆分对话框
-const openSplitDialog = (dataset: Dataset) => {
+const openSplitDialog = (dataset) => {
   currentSplitDataset.value = dataset
   splitForm.mode = 'ratio'
   splitForm.ratio = 50
@@ -302,7 +301,7 @@ const confirmSplit = () => {
   }
 
   const totalCount = currentSplitDataset.value.dataCount
-  let count1: number
+  let count1
 
   if (splitForm.mode === 'ratio') {
     count1 = Math.floor(totalCount * (splitForm.ratio / 100))
@@ -313,7 +312,7 @@ const confirmSplit = () => {
   const count2 = totalCount - count1
 
   // 创建两个新数据集
-  const newDataset1: Dataset = {
+  const newDataset1 = {
     id: Date.now().toString(),
     name: splitForm.name1,
     icon: currentSplitDataset.value.icon,
@@ -326,7 +325,7 @@ const confirmSplit = () => {
     updatedAt: new Date().toISOString().slice(0, 10),
   }
 
-  const newDataset2: Dataset = {
+  const newDataset2 = {
     id: (Date.now() + 1).toString(),
     name: splitForm.name2,
     icon: currentSplitDataset.value.icon,
@@ -354,7 +353,7 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 
 // 模拟测评集数据
-const allDatasets = ref<Dataset[]>([
+const allDatasets = ref([
   {
     id: '1',
     name: '通用对话测评集',
@@ -649,7 +648,7 @@ const datasets = computed(() => {
 })
 
 // 图标映射
-const iconMap: Record<string, any> = {
+const iconMap = {
   ChatDotRound,
   Cpu,
   Document,
@@ -657,17 +656,17 @@ const iconMap: Record<string, any> = {
 }
 
 // 获取图标组件
-const getIconComponent = (iconName: string) => {
+const getIconComponent = (iconName) => {
   return iconMap[iconName] || FolderOpened
 }
 
 // 处理页码变化
-const handlePageChange = (page: number) => {
+const handlePageChange = (page) => {
   currentPage.value = page
 }
 
 // 处理每页条数变化
-const handleSizeChange = (size: number) => {
+const handleSizeChange = (size) => {
   pageSize.value = size
   currentPage.value = 1
 }

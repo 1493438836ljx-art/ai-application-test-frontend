@@ -1,9 +1,10 @@
-<script setup lang="ts">
-import type { StatData } from '@/types'
-
-defineProps<{
-  data: StatData
-}>()
+<script setup>
+defineProps({
+  data: {
+    type: Object,
+    required: true
+  }
+})
 </script>
 
 <template>

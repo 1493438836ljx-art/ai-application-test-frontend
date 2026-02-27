@@ -1,10 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Task, StatData } from '@/types'
 
 export const useTaskStore = defineStore('task', () => {
   // 模拟任务数据
-  const tasks = ref<Task[]>([
+  const tasks = ref([
     {
       id: '1',
       name: 'GPT-4 对话能力测试',
@@ -53,7 +52,7 @@ export const useTaskStore = defineStore('task', () => {
   ])
 
   // 统计数据
-  const stats = computed<StatData[]>(() => [
+  const stats = computed(() => [
     {
       title: '测试任务',
       value: 12,
@@ -86,13 +85,13 @@ export const useTaskStore = defineStore('task', () => {
   })
 
   // 根据ID获取任务
-  const getTaskById = (id: string) => {
+  const getTaskById = (id) => {
     return tasks.value.find((task) => task.id === id)
   }
 
   // 添加任务
-  const addTask = (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newTask: Task = {
+  const addTask = (task) => {
+    const newTask = {
       ...task,
       id: String(Date.now()),
       createdAt: new Date().toLocaleString('zh-CN', {
@@ -115,7 +114,7 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   // 更新任务状态
-  const updateTaskStatus = (id: string, status: Task['status'], progress?: number) => {
+  const updateTaskStatus = (id, status, progress) => {
     const task = tasks.value.find((t) => t.id === id)
     if (task) {
       task.status = status

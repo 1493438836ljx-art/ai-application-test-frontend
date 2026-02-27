@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import { List, DataLine, Document, FolderOpened } from '@element-plus/icons-vue'
 import { useTaskStore } from '@/stores/task'
 import StatCard from '@/components/home/StatCard.vue'
@@ -8,14 +8,14 @@ import RecentTasks from '@/components/home/RecentTasks.vue'
 const taskStore = useTaskStore()
 
 // 图标映射
-const iconComponents: Record<string, any> = {
+const iconComponents = {
   List,
   DataLine,
   Document,
   FolderOpened,
 }
 
-const getStatIcon = (iconName: string) => iconComponents[iconName]
+const getStatIcon = (iconName) => iconComponents[iconName]
 </script>
 
 <template>
