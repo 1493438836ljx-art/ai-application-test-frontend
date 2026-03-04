@@ -16,6 +16,8 @@ import {
   Check,
   MagicStick,
   Loading,
+  Setting,
+  List,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
@@ -98,9 +100,6 @@ const generateRandomData = async () => {
   generateProgress.value = 0
   generateStatusText.value = '正在启动 AI Agent...'
 
-  const categories = ['问候', '询问', '建议', '闲聊', '投诉', '咨询']
-  const difficulties = ['简单', '中等', '困难']
-
   const startId = testData.value.length + 1
 
   // 模拟AI Agent爬取进度
@@ -124,14 +123,13 @@ const generateRandomData = async () => {
     columns.value.forEach(col => {
       if (col.key === 'id') {
         row[col.key] = `${startId + i}`
+      } else if (col.enumOptions && col.enumOptions.length > 0) {
+        // 如果列有枚举选项，随机选择一个
+        row[col.key] = col.enumOptions[Math.floor(Math.random() * col.enumOptions.length)]
       } else if (col.key === 'input' || col.key.toLowerCase().includes('input')) {
         row[col.key] = `测试输入内容 ${startId + i}`
       } else if (col.key === 'expectedOutput' || col.key.toLowerCase().includes('output')) {
         row[col.key] = `期望输出内容 ${startId + i}`
-      } else if (col.key === 'category' || col.key.toLowerCase().includes('category')) {
-        row[col.key] = categories[Math.floor(Math.random() * categories.length)]
-      } else if (col.key === 'difficulty' || col.key.toLowerCase().includes('difficulty')) {
-        row[col.key] = difficulties[Math.floor(Math.random() * difficulties.length)]
       } else {
         row[col.key] = ''
       }
@@ -188,13 +186,13 @@ const getIconComponent = (iconName) => {
   return iconMap[iconName] || FolderOpened
 }
 
-// 列定义（响应式，支持编辑）
+// 列定义（响应式，支持编辑，支持枚举值）
 const columns = ref([
   { key: 'id', label: 'ID', width: 80 },
   { key: 'input', label: '输入', width: 300 },
   { key: 'expectedOutput', label: '期望输出', width: 300 },
-  { key: 'category', label: '分类', width: 100 },
-  { key: 'difficulty', label: '难度', width: 80 },
+  { key: 'category', label: '分类', width: 100, enumOptions: ['问候', '询问', '建议', '闲聊', '投诉', '咨询'] },
+  { key: 'difficulty', label: '难度', width: 80, enumOptions: ['简单', '中等', '困难'] },
 ])
 
 // 编辑表头单元格（'label' 或 'key'）
@@ -256,6 +254,109 @@ const saveHeaderEdit = () => {
 const cancelHeaderEdit = () => {
   editingHeaderCell.value = null
   editHeaderContent.value = ''
+}
+
+// ========== 列配置功能 ==========
+const columnConfigDialogVisible = ref(false)
+const columnConfigForm = reactive({
+  colIndex: -1,
+  label: '',
+  key: '',
+  isEnum: false,
+  enumOptions: [],
+})
+const newEnumOption = ref('')
+
+// 打开列配置对话框
+const openColumnConfig = () => {
+  if (!contextMenuTarget.value) return
+
+  const { col } = contextMenuTarget.value
+  const colDef = columns.value[col]
+  if (!colDef) {
+    hideContextMenu()
+    return
+  }
+
+  columnConfigForm.colIndex = col
+  columnConfigForm.label = colDef.label
+  columnConfigForm.key = colDef.key
+  columnConfigForm.isEnum = !!(colDef.enumOptions && colDef.enumOptions.length > 0)
+  columnConfigForm.enumOptions = colDef.enumOptions ? [...colDef.enumOptions] : []
+
+  hideContextMenu()
+  columnConfigDialogVisible.value = true
+}
+
+// 添加枚举选项
+const addEnumOption = () => {
+  const option = newEnumOption.value.trim()
+  if (!option) return
+  if (columnConfigForm.enumOptions.includes(option)) {
+    ElMessage.warning('该选项已存在')
+    return
+  }
+  columnConfigForm.enumOptions.push(option)
+  newEnumOption.value = ''
+}
+
+// 删除枚举选项
+const removeEnumOption = (index) => {
+  columnConfigForm.enumOptions.splice(index, 1)
+}
+
+// 保存列配置
+const saveColumnConfig = () => {
+  const { colIndex, label, key, isEnum, enumOptions } = columnConfigForm
+
+  if (!label.trim()) {
+    ElMessage.warning('列名不能为空')
+    return
+  }
+
+  if (!key.trim()) {
+    ElMessage.warning('列ID不能为空')
+    return
+  }
+
+  if (isEnum && enumOptions.length === 0) {
+    ElMessage.warning('枚举类型至少需要一个选项')
+    return
+  }
+
+  const colDef = columns.value[colIndex]
+  if (!colDef) return
+
+  const oldKey = colDef.key
+  const newKey = key.trim()
+
+  // 更新列定义
+  colDef.label = label.trim()
+  colDef.key = newKey
+  colDef.enumOptions = isEnum ? [...enumOptions] : undefined
+
+  // 如果 key 变化了，更新数据
+  if (oldKey !== newKey) {
+    testData.value.forEach(row => {
+      if (row[oldKey] !== undefined) {
+        row[newKey] = row[oldKey]
+        delete row[oldKey]
+      }
+    })
+  }
+
+  // 如果是枚举类型且选项变化了，检查数据是否需要更新
+  if (isEnum && enumOptions.length > 0) {
+    testData.value.forEach(row => {
+      if (row[newKey] && !enumOptions.includes(row[newKey])) {
+        // 如果当前值不在新的枚举选项中，设置为第一个选项
+        row[newKey] = enumOptions[0]
+      }
+    })
+  }
+
+  columnConfigDialogVisible.value = false
+  ElMessage.success('列配置已保存')
 }
 
 // 加载测评集数据
@@ -587,6 +688,9 @@ const addRowAbove = () => {
   columns.value.forEach(col => {
     if (col.key === 'id') {
       newRow[col.key] = 'new'
+    } else if (col.enumOptions && col.enumOptions.length > 0) {
+      // 枚举列使用第一个选项作为默认值
+      newRow[col.key] = col.enumOptions[0]
     } else {
       newRow[col.key] = ''
     }
@@ -619,6 +723,9 @@ const addRowBelow = () => {
   columns.value.forEach(col => {
     if (col.key === 'id') {
       newRow[col.key] = 'new'
+    } else if (col.enumOptions && col.enumOptions.length > 0) {
+      // 枚举列使用第一个选项作为默认值
+      newRow[col.key] = col.enumOptions[0]
     } else {
       newRow[col.key] = ''
     }
@@ -756,6 +863,7 @@ const deleteEntireColumn = () => {
 
 // 隐藏右键菜单
 const hideContextMenu = () => {
+  if (!contextMenuTarget.value) return
   contextMenuTarget.value = null
 }
 
@@ -770,13 +878,20 @@ const handlePageClick = () => {
 const handleAddRow = () => {
   if (!isTableEditMode.value) return
   const newId = testData.value.length + 1
-  testData.value.push({
-    id: `${newId}`,
-    input: '',
-    expectedOutput: '',
-    category: '问候',
-    difficulty: '简单',
+
+  // 创建新行数据
+  const newRow = { id: `${newId}` }
+  columns.value.forEach(col => {
+    if (col.key !== 'id') {
+      if (col.enumOptions && col.enumOptions.length > 0) {
+        newRow[col.key] = col.enumOptions[0]
+      } else {
+        newRow[col.key] = ''
+      }
+    }
   })
+
+  testData.value.push(newRow)
   if (dataset.value) {
     dataset.value.dataCount = testData.value.length
   }
@@ -862,7 +977,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="dataset-detail-page">
+  <div class="dataset-detail-page" @click="handlePageClick">
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
@@ -1070,7 +1185,7 @@ onMounted(() => {
                   v-if="editingCell?.row === rowIndex && editingCell?.col === colIndex"
                 >
                   <input
-                    v-if="col.key !== 'difficulty'"
+                    v-if="!col.enumOptions"
                     v-model="editContent"
                     class="cell-input"
                     @blur="saveCellEdit"
@@ -1083,12 +1198,12 @@ onMounted(() => {
                     v-else
                     v-model="editContent"
                     class="cell-select"
-                    @change="saveEdit"
-                    @blur="cancelEdit"
+                    @change="saveCellEdit"
+                    @blur="cancelCellEdit"
                   >
-                    <option value="简单">简单</option>
-                    <option value="中等">中等</option>
-                    <option value="困难">困难</option>
+                    <option v-for="option in col.enumOptions" :key="option" :value="option">
+                      {{ option }}
+                    </option>
                   </select>
                 </template>
                 <template v-else>
@@ -1122,6 +1237,10 @@ onMounted(() => {
           <div class="context-menu-item" @click="addColumnRight">
             <el-icon><Plus /></el-icon>
             <span>在右侧添加一列</span>
+          </div>
+          <div class="context-menu-item" @click="openColumnConfig">
+            <el-icon><Setting /></el-icon>
+            <span>配置列</span>
           </div>
           <div class="context-menu-divider"></div>
           <div class="context-menu-item danger" @click="deleteEntireRow">
@@ -1257,6 +1376,74 @@ onMounted(() => {
         <el-button type="primary" :icon="MagicStick" @click="generateRandomData">
           生成
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 列配置对话框 -->
+    <el-dialog
+      v-model="columnConfigDialogVisible"
+      title="配置列"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="columnConfigForm" label-width="100px">
+        <el-form-item label="列名" required>
+          <el-input v-model="columnConfigForm.label" placeholder="请输入列名" />
+        </el-form-item>
+
+        <el-form-item label="列ID" required>
+          <el-input v-model="columnConfigForm.key" placeholder="请输入列ID" />
+        </el-form-item>
+
+        <el-form-item label="列类型">
+          <el-radio-group v-model="columnConfigForm.isEnum">
+            <el-radio-button :value="false">普通文本</el-radio-button>
+            <el-radio-button :value="true">枚举类型</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="columnConfigForm.isEnum" label="枚举选项" required>
+          <div class="enum-options-container">
+            <div class="enum-options-list">
+              <div
+                v-if="columnConfigForm.enumOptions.length === 0"
+                class="enum-options-empty"
+              >
+                <el-icon class="empty-icon"><List /></el-icon>
+                <span>暂无枚举选项，请添加选项后生效</span>
+              </div>
+              <div
+                v-for="(option, index) in columnConfigForm.enumOptions"
+                :key="index"
+                class="enum-option-item"
+              >
+                <span class="enum-option-text">{{ option }}</span>
+                <el-button
+                  type="danger"
+                  size="small"
+                  :icon="Delete"
+                  circle
+                  @click="removeEnumOption(index)"
+                />
+              </div>
+            </div>
+            <div class="enum-option-add" @click.stop>
+              <el-input
+                v-model="newEnumOption"
+                placeholder="输入新选项"
+                size="small"
+                @keyup.enter.stop="addEnumOption"
+                @keydown.stop
+              />
+              <el-button type="primary" size="small" @click.stop="addEnumOption">添加</el-button>
+            </div>
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="columnConfigDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveColumnConfig">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1657,5 +1844,74 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: #67c23a;
+}
+
+/* 枚举选项配置样式 */
+.enum-options-container {
+  width: 100%;
+}
+
+.enum-options-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 12px;
+  background: #fafafa;
+}
+
+.enum-options-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 8px;
+  color: #909399;
+}
+
+.enum-options-empty .empty-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.enum-options-empty span {
+  font-size: 12px;
+}
+
+.enum-option-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  background: #fff;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+}
+
+.enum-option-item:last-child {
+  margin-bottom: 0;
+}
+
+.enum-option-text {
+  flex: 1;
+  font-size: 13px;
+  color: #606266;
+}
+
+.enum-option-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.enum-option-add .el-input {
+  flex: 1;
+}
+
+.enum-option-add .el-button {
+  flex-shrink: 0;
 }
 </style>

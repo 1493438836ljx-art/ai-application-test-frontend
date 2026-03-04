@@ -1,6 +1,13 @@
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import hljs from 'highlight.js/lib/core'
+import python from 'highlight.js/lib/languages/python'
+import 'highlight.js/styles/atom-one-dark.css'
+
+// 注册 Python 语法
+hljs.registerLanguage('python', python)
+
 import {
   Plus,
   Edit,
@@ -14,6 +21,7 @@ import {
   CircleCheck,
   CircleClose,
   Cpu,
+  FullScreen,
 } from '@element-plus/icons-vue'
 
 // 搜索关键词
@@ -29,6 +37,7 @@ const plugins = ref([
     name: '数据预处理脚本',
     description: '对输入数据进行清洗和标准化处理，去除多余空白、统一换行符、移除HTML标签',
     category: 'data',
+    tags: ['数据处理', '文本清洗'],
     code: `def execute(input_data, config):
     import re
     result = input_data.strip()
@@ -47,6 +56,7 @@ const plugins = ref([
     name: 'JSON 数据提取',
     description: '从嵌套 JSON 中提取指定路径的数据，支持多级路径访问',
     category: 'data',
+    tags: ['数据处理', 'JSON'],
     code: `def execute(input_data, config):
     import json
     def get_nested_value(obj, path):
@@ -73,6 +83,7 @@ const plugins = ref([
     name: '敏感词过滤',
     description: '检测并过滤文本中的敏感词汇，返回过滤后的文本和发现的敏感词列表',
     category: 'data',
+    tags: ['数据处理', '安全'],
     code: `def execute(input_data, config):
     text = str(input_data)
     sensitive_words = config.get('words', '').split(',')
@@ -100,6 +111,7 @@ const plugins = ref([
     name: 'HTTP 请求执行器',
     description: '执行自定义 HTTP 请求，支持 GET、POST 等方法，可配置请求头和请求体',
     category: 'execution',
+    tags: ['测试执行', 'HTTP', 'API'],
     code: `def execute(input_data, config):
     import urllib.request
     import json
@@ -130,6 +142,7 @@ const plugins = ref([
     name: '数据库查询执行器',
     description: '执行 SQL 查询语句，支持 MySQL、PostgreSQL 等数据库',
     category: 'execution',
+    tags: ['测试执行', '数据库'],
     code: `def execute(input_data, config):
     # 数据库查询执行器
     # 注意：实际使用需要安装相应数据库驱动
@@ -156,6 +169,7 @@ const plugins = ref([
     name: '文本相似度评估',
     description: '计算两个文本之间的相似度分数，返回0-1之间的浮点数',
     category: 'evaluation',
+    tags: ['结果评估', 'NLP'],
     code: `def execute(input_data, config):
     from difflib import SequenceMatcher
     text1 = input_data.get('text1', '')
@@ -172,6 +186,7 @@ const plugins = ref([
     name: '响应时间分析',
     description: '分析 API 响应时间并生成统计报告，包括最小值、最大值、平均值、中位数、P95等',
     category: 'evaluation',
+    tags: ['结果评估', '性能'],
     code: `def execute(input_data, config):
     times = input_data if isinstance(input_data, list) else [input_data]
     if not times:
@@ -197,6 +212,7 @@ const plugins = ref([
     name: '关键词匹配评估',
     description: '检查输出中是否包含预期的关键词，支持多个关键词和匹配模式',
     category: 'evaluation',
+    tags: ['结果评估', '文本匹配'],
     code: `def execute(input_data, config):
     import re
     text = str(input_data.get('output', ''))
@@ -246,15 +262,32 @@ const formData = reactive({
   name: '',
   description: '',
   category: 'data',
-  code: `def execute(input_data, config):
+  tags: [],
+  code: `import argparse
+import json
+
+
+def execute(input_data, config):
     """
     插件描述
-    :param input_data: 输入数据
+    :param input_data: 输入测评集
     :param config: 配置参数
     :return: 处理结果
     """
     result = input_data
-    return result`,
+    return result
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='插件执行脚本')
+    parser.add_argument('-i', '--input', type=str, default='', help='输入数据')
+    parser.add_argument('-c', '--config', type=str, default='{}', help='配置参数(JSON格式)')
+    args = parser.parse_args()
+
+    input_data = args.input
+    config = json.loads(args.config)
+    result = execute(input_data, config)
+    print(f"执行结果: {result}")`,
   params: [],
   status: 'active',
 })
@@ -309,6 +342,24 @@ const pluginCategories = [
   { value: 'evaluation', label: '结果评估', color: 'warning' },
 ]
 
+// 预设标签选项
+const presetTags = [
+  '数据处理',
+  '文本清洗',
+  'JSON',
+  '安全',
+  '测试执行',
+  'HTTP',
+  'API',
+  '数据库',
+  '结果评估',
+  'NLP',
+  '性能',
+  '文本匹配',
+  '工具',
+  '转换',
+]
+
 // 获取分类标签
 const getCategoryLabel = (category) => {
   const found = pluginCategories.find(c => c.value === category)
@@ -335,7 +386,8 @@ const filteredPlugins = computed(() => {
     const keyword = searchKeyword.value.toLowerCase()
     result = result.filter(p =>
       p.name.toLowerCase().includes(keyword) ||
-      p.description.toLowerCase().includes(keyword)
+      p.description.toLowerCase().includes(keyword) ||
+      (p.tags && p.tags.some(tag => tag.toLowerCase().includes(keyword)))
     )
   }
 
@@ -357,6 +409,15 @@ const codeLines = computed(() => {
   return Math.max(lines, 20) // 至少显示20行
 })
 
+// 高亮后的代码
+const highlightedCode = computed(() => {
+  try {
+    return hljs.highlight(formData.code, { language: 'python' }).value
+  } catch {
+    return formData.code
+  }
+})
+
 // 获取状态类型
 const getStatusType = (status) => {
   return status === 'active' ? 'success' : 'info'
@@ -372,15 +433,32 @@ const resetForm = () => {
   formData.name = ''
   formData.description = ''
   formData.category = 'data'
-  formData.code = `def execute(input_data, config):
+  formData.tags = []
+  formData.code = `import argparse
+import json
+
+
+def execute(input_data, config):
     """
     插件描述
-    :param input_data: 输入数据
+    :param input_data: 输入测评集
     :param config: 配置参数
     :return: 处理结果
     """
     result = input_data
-    return result`
+    return result
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='插件执行脚本')
+    parser.add_argument('-i', '--input', type=str, default='', help='输入数据')
+    parser.add_argument('-c', '--config', type=str, default='{}', help='配置参数(JSON格式)')
+    args = parser.parse_args()
+
+    input_data = args.input
+    config = json.loads(args.config)
+    result = execute(input_data, config)
+    print(f"执行结果: {result}")`
   formData.params = []
   formData.status = 'active'
   formRef.value?.resetFields()
@@ -401,8 +479,9 @@ const openEditDialog = (plugin) => {
   formData.name = plugin.name
   formData.description = plugin.description
   formData.category = plugin.category || 'data'
+  formData.tags = plugin.tags ? [...plugin.tags] : []
   formData.code = plugin.code
-  formData.params = plugin.params ? [...plugin.params.map(p => ({ ...p }))] : []
+  formData.params = plugin.params ? plugin.params.map(p => ({ ...p })) : []
   formData.status = plugin.status
   dialogVisible.value = true
 }
@@ -421,6 +500,7 @@ const handleSubmit = async () => {
             name: formData.name,
             description: formData.description,
             category: formData.category,
+            tags: [...formData.tags],
             code: formData.code,
             params: [...formData.params],
             status: formData.status,
@@ -434,6 +514,7 @@ const handleSubmit = async () => {
           name: formData.name,
           description: formData.description,
           category: formData.category,
+          tags: [...formData.tags],
           code: formData.code,
           params: [...formData.params],
           status: formData.status,
@@ -475,6 +556,7 @@ const handleCopy = (plugin) => {
     ...plugin,
     id: `plugin-${Date.now()}`,
     name: `${plugin.name} (副本)`,
+    tags: plugin.tags ? [...plugin.tags] : [],
     createdAt: new Date().toISOString().slice(0, 10),
     updatedAt: new Date().toISOString().slice(0, 10),
   }
@@ -586,6 +668,60 @@ const handleCopyCode = (plugin) => {
     ElMessage.error('复制失败，请手动复制')
   })
 }
+
+// 处理代码编辑器 Tab 键缩进
+const handleCodeKeydown = (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault()
+    const textarea = e.target
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const value = formData.code
+
+    // 插入 4 个空格作为缩进
+    const indent = '    '
+    formData.code = value.substring(0, start) + indent + value.substring(end)
+
+    // 恢复光标位置
+    nextTick(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + indent.length
+    })
+  }
+}
+
+// 编辑器全屏状态
+const isFullscreen = ref(false)
+
+// ESC 键退出全屏处理
+const handleEscKey = (e) => {
+  if (e.key === 'Escape' && isFullscreen.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    isFullscreen.value = false
+  }
+}
+
+// 切换全屏
+const toggleFullscreen = () => {
+  isFullscreen.value = !isFullscreen.value
+}
+
+// 监听全屏状态变化
+watch(isFullscreen, (val) => {
+  if (val) {
+    // 使用捕获阶段，优先于对话框处理
+    document.addEventListener('keydown', handleEscKey, true)
+  } else {
+    document.removeEventListener('keydown', handleEscKey, true)
+  }
+})
+
+// 监听对话框关闭，重置全屏状态
+watch(dialogVisible, (val) => {
+  if (!val && isFullscreen.value) {
+    isFullscreen.value = false
+  }
+})
 
 // 分页处理
 const handlePageChange = (page) => {
@@ -717,6 +853,12 @@ const handleSearch = () => {
 
         <!-- 卡片内容 -->
         <div class="card-content">
+          <!-- 标签显示 -->
+          <div class="plugin-tags" v-if="plugin.tags && plugin.tags.length > 0">
+            <el-tag v-for="tag in plugin.tags" :key="tag" size="small" type="info" effect="plain">
+              {{ tag }}
+            </el-tag>
+          </div>
           <p class="plugin-description">{{ plugin.description }}</p>
 
           <!-- 参数预览 -->
@@ -803,6 +945,20 @@ const handleSearch = () => {
           </el-radio-group>
         </el-form-item>
 
+        <el-form-item label="标签">
+          <el-select
+            v-model="formData.tags"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="请选择或输入标签"
+            style="width: 100%"
+          >
+            <el-option v-for="tag in presetTags" :key="tag" :label="tag" :value="tag" />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="状态">
           <el-radio-group v-model="formData.status">
             <el-radio value="active">启用</el-radio>
@@ -840,26 +996,39 @@ const handleSearch = () => {
         <el-divider content-position="left">Python 代码</el-divider>
 
         <el-form-item label="" prop="code">
-          <div class="code-editor-wrapper">
+          <div class="code-editor-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
             <div class="editor-header">
               <span class="editor-title">
                 <el-icon><Document /></el-icon>
                 plugin.py
               </span>
-              <span class="editor-tip">
-                必须定义 <code>execute(input_data, config)</code> 函数作为入口
-              </span>
+              <div class="editor-actions">
+                <span class="editor-tip">
+                  必须定义 <code>execute(input_data, config)</code> 函数作为入口
+                </span>
+                <el-button
+                  class="fullscreen-btn"
+                  :icon="FullScreen"
+                  circle
+                  size="small"
+                  @click="toggleFullscreen"
+                />
+              </div>
             </div>
             <div class="editor-container">
               <div class="line-numbers">
                 <span v-for="line in codeLines" :key="line">{{ line }}</span>
               </div>
-              <textarea
-                v-model="formData.code"
-                class="code-input"
-                placeholder="请输入 Python 代码"
-                spellcheck="false"
-              ></textarea>
+              <div class="code-area">
+                <pre class="code-highlight"><code v-html="highlightedCode"></code></pre>
+                <textarea
+                  v-model="formData.code"
+                  class="code-input"
+                  placeholder="请输入 Python 代码"
+                  spellcheck="false"
+                  @keydown="handleCodeKeydown"
+                ></textarea>
+              </div>
             </div>
           </div>
         </el-form-item>
@@ -1096,6 +1265,13 @@ const handleSearch = () => {
   flex: 1;
 }
 
+.plugin-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
 .plugin-description {
   margin: 0 0 12px 0;
   font-size: 13px;
@@ -1179,6 +1355,28 @@ const handleSearch = () => {
   border: 1px solid #dcdfe6;
 }
 
+.code-editor-wrapper.is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  border-radius: 0;
+  border: none;
+}
+
+.code-editor-wrapper.is-fullscreen .editor-container {
+  height: calc(100vh - 52px);
+  min-height: calc(100vh - 52px);
+}
+
+.code-editor-wrapper.is-fullscreen .code-area,
+.code-editor-wrapper.is-fullscreen .code-highlight,
+.code-editor-wrapper.is-fullscreen .code-input {
+  height: 100%;
+}
+
 .editor-header {
   display: flex;
   justify-content: space-between;
@@ -1195,6 +1393,23 @@ const handleSearch = () => {
   font-size: 13px;
   color: #cccccc;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fullscreen-btn {
+  background: transparent;
+  border: 1px solid #3c3c3c;
+  color: #cccccc;
+}
+
+.fullscreen-btn:hover {
+  background: #3c3c3c;
+  color: #fff;
 }
 
 .editor-tip {
@@ -1233,27 +1448,64 @@ const handleSearch = () => {
   padding: 0 12px;
 }
 
-.code-input {
+.code-area {
   flex: 1;
+  position: relative;
+  min-height: 360px;
+}
+
+.code-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
   padding: 12px 16px;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: transparent;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow: auto;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #fff;
+}
+
+.code-highlight code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  background: transparent;
+  color: #fff;
+}
+
+.code-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  color: transparent;
+  caret-color: #d4d4d4;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 13px;
   line-height: 1.6;
   border: none;
   outline: none;
   resize: none;
-  min-height: 360px;
   tab-size: 4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 .code-input::placeholder {
   color: #6a6a6a;
-}
-
-.code-input:focus {
-  background: #1e1e1e;
 }
 
 .params-config {
