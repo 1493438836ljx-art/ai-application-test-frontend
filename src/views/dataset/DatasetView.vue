@@ -240,6 +240,78 @@ const presetTags = [
   '工具',
 ]
 
+// 新建数据字典对话框
+const dictionaryDialogVisible = ref(false)
+const dictionaryFormRef = ref()
+const dictionaryForm = reactive({
+  name: '',
+  columns: [
+    { key: 'id', label: 'ID', type: 'string' },
+  { key: 'input', label: '输入', type: 'string' },
+    { key: 'output', label: '输出', type: 'string' },
+  ],
+})
+
+// 数据字典表单验证规则
+const dictionaryFormRules = {
+  name: [
+    { required: true, message: '请输入数据字典名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' },
+  ],
+}
+
+// 打开新建数据字典对话框
+const openCreateDictionaryDialog = () => {
+  dictionaryForm.name = ''
+  dictionaryForm.columns = [
+    { key: 'id', label: 'ID', type: 'string' },
+    { key: 'input', label: '输入', type: 'string' },
+    { key: 'output', label: '输出', type: 'string' },
+  ]
+  dictionaryDialogVisible.value = true
+}
+
+// 添加字段
+const addDictionaryColumn = () => {
+  dictionaryForm.columns.push({
+    key: '',
+    label: '',
+    type: 'string',
+  })
+}
+
+// 删除字段
+const removeDictionaryColumn = (index) => {
+  if (dictionaryForm.columns.length > 1) {
+    dictionaryForm.columns.splice(index, 1)
+  }
+}
+
+// 提交数据字典
+const handleDictionarySubmit = async () => {
+  if (!dictionaryFormRef.value) return
+
+  await dictionaryFormRef.value.validate((valid) => {
+    if (valid) {
+      // 过滤掉空的字段
+      const columns = dictionaryForm.columns.filter(col => col.key && col.label)
+
+      const newDictionary = {
+        id: `dict-${Date.now()}`,
+        name: dictionaryForm.name,
+        columns: columns,
+        createdAt: new Date().toISOString().slice(0, 10),
+        updatedAt: new Date().toISOString().slice(0, 10),
+      }
+
+      dataDictionaries.value.unshift(newDictionary)
+      formData.dictionaryId = newDictionary.id
+      dictionaryDialogVisible.value = false
+      ElMessage.success('数据字典创建成功')
+    }
+  })
+}
+
 // 表单验证规则
 const formRules = {
   name: [
@@ -1221,19 +1293,24 @@ const handleSizeChange = (size) => {
         </el-form-item>
 
         <el-form-item label="数据字典">
-          <el-select
-            v-model="formData.dictionaryId"
-            placeholder="请选择数据字典"
-            clearable
-            style="width: 100%"
-          >
-            <el-option
-              v-for="dict in dataDictionaries"
-              :key="dict.id"
-              :label="dict.name"
-              :value="dict.id"
-            />
-          </el-select>
+          <div style="display: flex; gap: 8px;">
+            <el-select
+              v-model="formData.dictionaryId"
+              placeholder="请选择数据字典"
+              clearable
+              style="flex: 1"
+            >
+              <el-option
+                v-for="dict in dataDictionaries"
+                :key="dict.id"
+                :label="dict.name"
+                :value="dict.id"
+              />
+            </el-select>
+            <el-button type="primary" link @click="openCreateDictionaryDialog">
+              新建
+            </el-button>
+          </div>
           <div class="dictionary-tip">
             选择数据字典后，将自动继承其字段结构
           </div>
@@ -1243,6 +1320,64 @@ const handleSizeChange = (size) => {
       <template #footer>
         <el-button @click="handleCancel">取消</el-button>
         <el-button type="primary" @click="handleSubmit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建数据字典对话框 -->
+    <el-dialog
+      v-model="dictionaryDialogVisible"
+      title="新建数据字典"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <el-form
+        ref="dictionaryFormRef"
+        :model="dictionaryForm"
+        :rules="dictionaryFormRules"
+        label-width="80px"
+        label-position="left"
+      >
+        <el-form-item label="名称" prop="name">
+          <el-input
+            v-model="dictionaryForm.name"
+            placeholder="请输入数据字典名称"
+            maxlength="50"
+            show-word-limit
+          />
+        </el-form-item>
+
+        <el-form-item label="字段定义">
+          <div class="columns-form">
+            <div
+              v-for="(column, index) in dictionaryForm.columns"
+              :key="index"
+              class="column-item"
+            >
+              <el-input v-model="column.key" placeholder="字段key" style="width: 120px" />
+              <el-input v-model="column.label" placeholder="字段名称" style="width: 120px" />
+              <el-select v-model="column.type" placeholder="类型" style="width: 100px">
+                <el-option label="字符串" value="string" />
+                <el-option label="数字" value="number" />
+                <el-option label="枚举" value="enum" />
+              </el-select>
+              <el-button
+                v-if="dictionaryForm.columns.length > 1"
+                type="danger"
+                :icon="Delete"
+                circle
+                @click="removeDictionaryColumn(index)"
+              />
+            </div>
+            <el-button type="primary" link @click="addDictionaryColumn">
+              添加字段
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="dictionaryDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleDictionarySubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -1655,5 +1790,23 @@ const handleSizeChange = (size) => {
 .time-text {
   font-size: 13px;
   color: #909399;
+}
+
+/* 数据字典对话框样式 */
+.columns-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.column-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.column-item .el-input,
+.column-item .el-select {
+  flex-shrink: 0;
 }
 </style>
