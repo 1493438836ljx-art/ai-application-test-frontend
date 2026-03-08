@@ -1821,8 +1821,22 @@ const handleSizeChange = (size) => {
 
 .column-item {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.column-main {
+  display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.column-extra {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  padding-left: 100px;
 }
 
 .column-item .el-input,
