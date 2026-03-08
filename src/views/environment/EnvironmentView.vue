@@ -816,7 +816,7 @@ const openEditDialog = (env) => {
   formData.baseUrl = env.baseUrl
   formData.authType = env.authType
   formData.authConfig = { ...env.authConfig }
-  formData.headers = env.headers ? [...env.headers.map(h => ({ ...h }))] : []
+  formData.headers = env.headers ? env.headers.map(h => ({ ...h })) : []
   formData.status = env.status
   dialogVisible.value = true
 }
@@ -970,10 +970,10 @@ const openEditApiDialog = (api) => {
   apiFormData.description = api.description || ''
   apiFormData.timeout = api.timeout || 30000
   apiFormData.retries = api.retries || 3
-  apiFormData.queryParams = api.queryParams ? [...api.queryParams.map(q => ({ ...q }))] : []
+  apiFormData.queryParams = api.queryParams ? api.queryParams.map(q => ({ ...q })) : []
   apiFormData.bodyType = api.bodyType || 'json'
   apiFormData.bodyTemplate = api.bodyTemplate || '{\n  "input": "{{input}}"\n}'
-  apiFormData.responseMappings = api.responseMappings ? [...api.responseMappings.map(m => ({ ...m }))] : []
+  apiFormData.responseMappings = api.responseMappings ? api.responseMappings.map(m => ({ ...m })) : []
   apiFormData.status = api.status || 'active'
   apiDialogVisible.value = true
 }

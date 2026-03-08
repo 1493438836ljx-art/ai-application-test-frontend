@@ -1059,11 +1059,6 @@ const handleSizeChange = (size) => {
               </div>
             </div>
 
-            <!-- 卡片内容 -->
-            <div class="card-content">
-              <p class="description">{{ dict.description }}</p>
-            </div>
-
             <!-- 字段列表 -->
             <div class="columns-preview">
               <div class="preview-title">字段定义</div>

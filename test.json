@@ -1,0 +1,12 @@
+[
+  {
+    "id": "content",
+    "name": "内容",
+    "constrain": ""
+  },
+  {
+    "id": "category",
+    "name": "类别",
+    "constrain": "['问候','建议','闲聊']"
+  }
+]
