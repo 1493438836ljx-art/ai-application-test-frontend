@@ -1371,7 +1371,7 @@ const handleSizeChange = (size) => {
                 v-if="column.type === 'number'"
                 v-model="column.max"
                 placeholder="最大值"
-                style=" 80px"
+                style="width: 80px"
                 type="number"
               />
               <el-input
