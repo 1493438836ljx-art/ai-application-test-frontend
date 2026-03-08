@@ -179,6 +179,7 @@ const formData = reactive({
   testType: 'objective',
   tags: [],
   description: '',
+  dictionaryId: '', // 关联的数据字典ID
 })
 
 // 测试类型选项
@@ -346,6 +347,7 @@ const handleSubmit = async () => {
               testType: formData.testType,
               tags: [...formData.tags],
               description: formData.description,
+              dictionaryId: formData.dictionaryId,
               dataCount: original.dataCount,
               createdAt: original.createdAt,
               updatedAt: new Date().toISOString().slice(0, 10),
@@ -365,6 +367,7 @@ const handleSubmit = async () => {
           testType: formData.testType,
           tags: [...formData.tags],
           description: formData.description,
+          dictionaryId: formData.dictionaryId,
           dataCount: 0,
           createdAt: new Date().toISOString().slice(0, 10),
           updatedAt: new Date().toISOString().slice(0, 10),
@@ -1216,6 +1219,25 @@ const handleSizeChange = (size) => {
             show-word-limit
           />
         </el-form-item>
+
+        <el-form-item label="数据字典">
+          <el-select
+            v-model="formData.dictionaryId"
+            placeholder="请选择数据字典"
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="dict in dataDictionaries"
+              :key="dict.id"
+              :label="dict.name"
+              :value="dict.id"
+            />
+          </el-select>
+          <div class="dictionary-tip">
+            选择数据字典后，将自动继承其字段结构
+          </div>
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -1576,6 +1598,12 @@ const handleSizeChange = (size) => {
 }
 
 .test-type-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.dictionary-tip {
   margin-top: 8px;
   font-size: 12px;
   color: #909399;
