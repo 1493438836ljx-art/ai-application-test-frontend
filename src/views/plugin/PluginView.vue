@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, computed, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import hljs from 'highlight.js/lib/core'
 import python from 'highlight.js/lib/languages/python'
@@ -7,6 +8,8 @@ import 'highlight.js/styles/atom-one-dark.css'
 
 // 注册 Python 语法
 hljs.registerLanguage('python', python)
+
+const router = useRouter()
 
 import {
   Plus,
@@ -22,6 +25,7 @@ import {
   CircleClose,
   Cpu,
   FullScreen,
+  Collection,
 } from '@element-plus/icons-vue'
 
 // 搜索关键词
@@ -29,6 +33,38 @@ const searchKeyword = ref('')
 
 // 分类筛选
 const selectedCategory = ref('all')
+
+// 数据字典列表
+const dataDictionaries = ref([
+  {
+    id: 'dict-1',
+    name: '通用对话测试',
+    description: '用于测试模型的基础对话能力，包含多轮对话、意图识别等测试场景',
+  },
+  {
+    id: 'dict-2',
+    name: '代码生成测试',
+    description: '用于测试模型的代码生成能力，包含 Python、Java、SQL 等编程语言的代码生成测试',
+  },
+  {
+    id: 'dict-3',
+    name: '文本摘要测试',
+    description: '用于测试模型的文本摘要能力',
+  },
+  {
+    id: 'dict-4',
+    name: '阅读理解测试',
+    description: '用于测试模型的阅读理解和信息提取能力',
+  },
+  {
+    id: 'dict-5',
+    name: '情感分析测试',
+    description: '用于测试模型的情感分析能力',
+  },
+])
+
+// 需要关联数据字典的分类
+const categoriesRequireDictionary = ['data', 'execution', 'evaluation']
 
 // 插件列表
 const plugins = ref([
@@ -38,6 +74,7 @@ const plugins = ref([
     description: '对输入数据进行清洗和标准化处理，去除多余空白、统一换行符、移除HTML标签',
     category: 'data',
     tags: ['数据处理', '文本清洗'],
+    dataDictionaryId: 'dict-1',
     code: `def execute(input_data, config):
     import re
     result = input_data.strip()
@@ -48,6 +85,8 @@ const plugins = ref([
       { name: 'remove_html', type: 'boolean', default: 'true', description: '是否移除HTML标签' },
     ],
     status: 'active',
+    testResult: 'success',
+    lastTestTime: '2024-02-26 15:30',
     createdAt: '2024-02-15',
     updatedAt: '2024-02-20',
   },
@@ -57,6 +96,7 @@ const plugins = ref([
     description: '从嵌套 JSON 中提取指定路径的数据，支持多级路径访问',
     category: 'data',
     tags: ['数据处理', 'JSON'],
+    dataDictionaryId: 'dict-4',
     code: `def execute(input_data, config):
     import json
     def get_nested_value(obj, path):
@@ -75,6 +115,8 @@ const plugins = ref([
       { name: 'path', type: 'string', default: '', description: '数据路径，如 data.result' },
     ],
     status: 'active',
+    testResult: 'success',
+    lastTestTime: '2024-02-26 14:20',
     createdAt: '2024-02-01',
     updatedAt: '2024-02-15',
   },
@@ -84,6 +126,7 @@ const plugins = ref([
     description: '检测并过滤文本中的敏感词汇，返回过滤后的文本和发现的敏感词列表',
     category: 'data',
     tags: ['数据处理', '安全'],
+    dataDictionaryId: 'dict-5',
     code: `def execute(input_data, config):
     text = str(input_data)
     sensitive_words = config.get('words', '').split(',')
@@ -103,6 +146,8 @@ const plugins = ref([
       { name: 'words', type: 'string', default: '', description: '敏感词列表，逗号分隔' },
     ],
     status: 'active',
+    testResult: 'failed',
+    lastTestTime: '2024-02-25 10:00',
     createdAt: '2024-02-25',
     updatedAt: '2024-02-26',
   },
@@ -112,6 +157,7 @@ const plugins = ref([
     description: '执行自定义 HTTP 请求，支持 GET、POST 等方法，可配置请求头和请求体',
     category: 'execution',
     tags: ['测试执行', 'HTTP', 'API'],
+    dataDictionaryId: 'dict-2',
     code: `def execute(input_data, config):
     import urllib.request
     import json
@@ -134,6 +180,8 @@ const plugins = ref([
       { name: 'method', type: 'string', default: 'GET', description: '请求方法' },
     ],
     status: 'active',
+    testResult: 'success',
+    lastTestTime: '2024-02-26 16:00',
     createdAt: '2024-02-10',
     updatedAt: '2024-02-18',
   },
@@ -143,6 +191,7 @@ const plugins = ref([
     description: '执行 SQL 查询语句，支持 MySQL、PostgreSQL 等数据库',
     category: 'execution',
     tags: ['测试执行', '数据库'],
+    dataDictionaryId: 'dict-2',
     code: `def execute(input_data, config):
     # 数据库查询执行器
     # 注意：实际使用需要安装相应数据库驱动
@@ -161,6 +210,8 @@ const plugins = ref([
       { name: 'query', type: 'string', default: '', description: 'SQL 查询语句' },
     ],
     status: 'inactive',
+    testResult: 'pending',
+    lastTestTime: null,
     createdAt: '2024-01-20',
     updatedAt: '2024-02-10',
   },
@@ -170,6 +221,7 @@ const plugins = ref([
     description: '计算两个文本之间的相似度分数，返回0-1之间的浮点数',
     category: 'evaluation',
     tags: ['结果评估', 'NLP'],
+    dataDictionaryId: 'dict-3',
     code: `def execute(input_data, config):
     from difflib import SequenceMatcher
     text1 = input_data.get('text1', '')
@@ -178,6 +230,8 @@ const plugins = ref([
     return round(similarity, 4)`,
     params: [],
     status: 'active',
+    testResult: 'success',
+    lastTestTime: '2024-02-26 11:00',
     createdAt: '2024-02-10',
     updatedAt: '2024-02-18',
   },
@@ -187,6 +241,7 @@ const plugins = ref([
     description: '分析 API 响应时间并生成统计报告，包括最小值、最大值、平均值、中位数、P95等',
     category: 'evaluation',
     tags: ['结果评估', '性能'],
+    dataDictionaryId: 'dict-1',
     code: `def execute(input_data, config):
     times = input_data if isinstance(input_data, list) else [input_data]
     if not times:
@@ -204,6 +259,8 @@ const plugins = ref([
     return result`,
     params: [],
     status: 'active',
+    testResult: 'success',
+    lastTestTime: '2024-02-26 09:30',
     createdAt: '2024-01-20',
     updatedAt: '2024-02-10',
   },
@@ -213,6 +270,7 @@ const plugins = ref([
     description: '检查输出中是否包含预期的关键词，支持多个关键词和匹配模式',
     category: 'evaluation',
     tags: ['结果评估', '文本匹配'],
+    dataDictionaryId: 'dict-4',
     code: `def execute(input_data, config):
     import re
     text = str(input_data.get('output', ''))
@@ -242,6 +300,8 @@ const plugins = ref([
       { name: 'mode', type: 'string', default: 'any', description: '匹配模式：any/all/none' },
     ],
     status: 'active',
+    testResult: 'success',
+    lastTestTime: '2024-02-28 14:00',
     createdAt: '2024-02-28',
     updatedAt: '2024-02-28',
   },
@@ -266,6 +326,7 @@ const formData = reactive({
   code: defaultCodeTemplate,
   params: [],
   status: 'active',
+  dataDictionaryId: '',
 })
 
 // 参数表单
@@ -467,6 +528,18 @@ const getStatusText = (status) => {
   return status === 'active' ? '已启用' : '已禁用'
 }
 
+// 获取数据字典名称
+const getDictionaryName = (dictId) => {
+  if (!dictId) return ''
+  const dict = dataDictionaries.value.find((d) => d.id === dictId)
+  return dict ? dict.name : ''
+}
+
+// 判断分类是否需要关联数据字典
+const needsDictionary = (category) => {
+  return categoriesRequireDictionary.includes(category)
+}
+
 // 重置表单
 const resetForm = () => {
   formData.name = ''
@@ -476,6 +549,7 @@ const resetForm = () => {
   formData.code = defaultCodeTemplate
   formData.params = []
   formData.status = 'active'
+  formData.dataDictionaryId = ''
   formRef.value?.resetFields()
 }
 
@@ -487,7 +561,19 @@ const openCreateDialog = () => {
   dialogVisible.value = true
 }
 
-// 打开编辑对话框
+// 跳转到详情页
+const goToDetail = (id) => {
+  router.push(`/plugin/${id}`)
+}
+
+// 获取测试结果文字
+const getTestResultText = (result) => {
+  if (result === 'success') return '测试通过'
+  if (result === 'failed') return '测试失败'
+  return '未测试'
+}
+
+// 打开编辑对话框（只编辑基本信息）
 const openEditDialog = (plugin) => {
   isEditMode.value = true
   editingId.value = plugin.id
@@ -495,9 +581,11 @@ const openEditDialog = (plugin) => {
   formData.description = plugin.description
   formData.category = plugin.category || 'data'
   formData.tags = plugin.tags ? [...plugin.tags] : []
+  formData.status = plugin.status
+  formData.dataDictionaryId = plugin.dataDictionaryId || ''
+  // 编辑模式不加载代码和参数，只编辑基本信息
   formData.code = plugin.code
   formData.params = plugin.params ? plugin.params.map(p => ({ ...p })) : []
-  formData.status = plugin.status
   dialogVisible.value = true
 }
 
@@ -507,6 +595,12 @@ const handleSubmit = async () => {
 
   await formRef.value.validate((valid) => {
     if (valid) {
+      // 验证数据字典关联
+      if (needsDictionary(formData.category) && !formData.dataDictionaryId) {
+        ElMessage.warning('请选择关联的数据字典')
+        return
+      }
+
       if (isEditMode.value) {
         const index = plugins.value.findIndex(p => p.id === editingId.value)
         if (index !== -1) {
@@ -516,28 +610,36 @@ const handleSubmit = async () => {
             description: formData.description,
             category: formData.category,
             tags: [...formData.tags],
-            code: formData.code,
-            params: [...formData.params],
             status: formData.status,
+            dataDictionaryId: needsDictionary(formData.category) ? formData.dataDictionaryId : '',
             updatedAt: new Date().toISOString().slice(0, 10),
           }
           ElMessage.success('插件更新成功')
         }
       } else {
+        // 新建插件：使用默认代码模板，空参数列表
+        const newId = `plugin-${Date.now()}`
         const newPlugin = {
-          id: `plugin-${Date.now()}`,
+          id: newId,
           name: formData.name,
           description: formData.description,
           category: formData.category,
           tags: [...formData.tags],
-          code: formData.code,
-          params: [...formData.params],
+          code: getCodeTemplateByCategory(formData.category),
+          params: [],
           status: formData.status,
+          dataDictionaryId: needsDictionary(formData.category) ? formData.dataDictionaryId : '',
+          testResult: 'pending',
+          lastTestTime: null,
           createdAt: new Date().toISOString().slice(0, 10),
           updatedAt: new Date().toISOString().slice(0, 10),
         }
         plugins.value.unshift(newPlugin)
-        ElMessage.success('插件创建成功')
+        ElMessage.success('插件创建成功，请在详情页编辑代码和配置参数')
+        dialogVisible.value = false
+        // 跳转到详情页编辑代码和参数
+        router.push(`/plugin/${newId}`)
+        return
       }
       dialogVisible.value = false
     }
@@ -764,6 +866,11 @@ const handleSizeChange = (size) => {
 const handleSearch = () => {
   currentPage.value = 1
 }
+
+// 跳转到数据字典详情页
+const goToDictionaryDetail = (dictId) => {
+  router.push({ name: 'dictionary-detail', params: { id: dictId } })
+}
 </script>
 
 <template>
@@ -844,14 +951,6 @@ const handleSearch = () => {
             <el-button class="more-btn" :icon="More" circle size="small" />
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="openTestDialog(plugin)">
-                  <el-icon><VideoPlay /></el-icon>
-                  测试运行
-                </el-dropdown-item>
-                <el-dropdown-item @click="openCodeDialog(plugin)">
-                  <el-icon><Document /></el-icon>
-                  查看代码
-                </el-dropdown-item>
                 <el-dropdown-item @click="handleCopy(plugin)">
                   <el-icon><CopyDocument /></el-icon>
                   复制
@@ -862,10 +961,6 @@ const handleSearch = () => {
                     <CircleClose v-else />
                   </el-icon>
                   {{ plugin.status === 'active' ? '禁用' : '启用' }}
-                </el-dropdown-item>
-                <el-dropdown-item @click="openEditDialog(plugin)">
-                  <el-icon><Edit /></el-icon>
-                  编辑
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="handleDelete(plugin)">
                   <span style="color: #f56c6c">
@@ -887,6 +982,12 @@ const handleSearch = () => {
             </el-tag>
           </div>
           <p class="plugin-description">{{ plugin.description }}</p>
+
+          <!-- 关联数据字典 -->
+          <div v-if="plugin.dataDictionaryId && needsDictionary(plugin.category)" class="dictionary-info clickable" @click.stop="goToDictionaryDetail(plugin.dataDictionaryId)">
+            <el-icon><Collection /></el-icon>
+            <span class="dictionary-name">{{ getDictionaryName(plugin.dataDictionaryId) }}</span>
+          </div>
 
           <!-- 参数预览 -->
           <div class="params-preview" v-if="plugin.params && plugin.params.length > 0">
@@ -913,14 +1014,16 @@ const handleSearch = () => {
 
         <!-- 卡片底部 -->
         <div class="card-footer">
-          <div class="time-info">
-            <span>创建于 {{ plugin.createdAt }}</span>
-            <span class="time-divider">|</span>
-            <span>更新于 {{ plugin.updatedAt }}</span>
+          <div class="test-status" :class="plugin.testResult">
+            <div class="status-indicator">
+              <span class="status-dot"></span>
+              <span class="status-text">{{ getTestResultText(plugin.testResult) }}</span>
+            </div>
+            <span class="test-time" v-if="plugin.lastTestTime">{{ plugin.lastTestTime }}</span>
           </div>
           <div class="card-actions">
-            <el-button size="small" :icon="VideoPlay" @click="openTestDialog(plugin)">测试</el-button>
-            <el-button type="primary" size="small" @click="openEditDialog(plugin)">编辑</el-button>
+            <el-button text type="primary" size="small" @click="goToDetail(plugin.id)">查看详情</el-button>
+            <el-button text type="primary" size="small" @click="openEditDialog(plugin)">编辑</el-button>
           </div>
         </div>
       </el-card>
@@ -945,8 +1048,8 @@ const handleSearch = () => {
     <!-- 新建/编辑插件对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEditMode ? '编辑插件' : '新建插件'"
-      width="800px"
+      :title="isEditMode ? '编辑插件基本信息' : '新建插件'"
+      width="560px"
       :close-on-click-modal="false"
     >
       <el-form
@@ -993,72 +1096,58 @@ const handleSearch = () => {
           </el-radio-group>
         </el-form-item>
 
-        <el-divider content-position="left">配置参数</el-divider>
-
-        <el-form-item label="">
-          <div class="params-config">
-            <el-table :data="formData.params" size="small" v-if="formData.params.length > 0">
-              <el-table-column prop="name" label="参数名" width="120" />
-              <el-table-column prop="type" label="类型" width="100">
-                <template #default="{ row }">
-                  {{ paramTypes.find(t => t.value === row.type)?.label || row.type }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="default" label="默认值" width="120" />
-              <el-table-column prop="description" label="说明" />
-              <el-table-column label="操作" width="100">
-                <template #default="{ $index }">
-                  <el-button size="small" link @click="editParam($index)">编辑</el-button>
-                  <el-button size="small" link type="danger" @click="removeParam($index)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-button type="primary" link @click="addParam" style="margin-top: 8px">
-              <el-icon><Plus /></el-icon>
-              添加参数
-            </el-button>
-          </div>
+        <!-- 数据字典关联 - 仅当分类为数据处理、测试执行、结果评估时显示 -->
+        <el-form-item
+          v-if="needsDictionary(formData.category)"
+          label="数据字典"
+          prop="dataDictionaryId"
+          required
+        >
+          <el-select
+            v-model="formData.dataDictionaryId"
+            placeholder="请选择关联的数据字典"
+            style="width: 100%"
+            clearable
+          >
+            <el-option
+              v-for="dict in dataDictionaries"
+              :key="dict.id"
+              :label="dict.name"
+              :value="dict.id"
+            >
+              <div style="display: flex; flex-direction: column">
+                <span>{{ dict.name }}</span>
+                <span style="font-size: 12px; color: #909399">{{ dict.description }}</span>
+              </div>
+            </el-option>
+          </el-select>
         </el-form-item>
 
-        <el-divider content-position="left">Python 代码</el-divider>
+        <!-- 编辑模式下提示信息 -->
+        <div v-if="isEditMode" class="edit-mode-tip">
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              如需编辑代码和配置参数，请前往<a @click="goToDetail(editingId)" style="cursor: pointer; color: #409eff;">插件详情页</a>进行编辑
+            </template>
+          </el-alert>
+        </div>
 
-        <el-form-item label="" prop="code">
-          <div class="code-editor-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
-            <div class="editor-header">
-              <span class="editor-title">
-                <el-icon><Document /></el-icon>
-                plugin.py
-              </span>
-              <div class="editor-actions">
-                <span class="editor-tip">
-                  必须定义 <code>execute(input_data, config)</code> 函数作为入口
-                </span>
-                <el-button
-                  class="fullscreen-btn"
-                  :icon="FullScreen"
-                  circle
-                  size="small"
-                  @click="toggleFullscreen"
-                />
-              </div>
-            </div>
-            <div class="editor-container">
-              <div class="line-numbers">
-                <span v-for="line in codeLines" :key="line">{{ line }}</span>
-              </div>
-              <div class="code-area">
-                <pre class="code-highlight"><code v-html="highlightedCode"></code></pre>
-                <textarea
-                  v-model="formData.code"
-                  class="code-input"
-                  placeholder="请输入 Python 代码"
-                  spellcheck="false"
-                  @keydown="handleCodeKeydown"
-                ></textarea>
-              </div>
-            </div>
-          </div>
-        </el-form-item>
+        <!-- 新建模式下提示信息 -->
+        <div v-if="!isEditMode" class="create-mode-tip">
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              创建后将自动跳转到详情页，可在那里编辑代码和配置参数
+            </template>
+          </el-alert>
+        </div>
       </el-form>
 
       <template #footer>
@@ -1299,6 +1388,36 @@ const handleSearch = () => {
   margin-bottom: 12px;
 }
 
+.dictionary-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #909399;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.dictionary-info.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dictionary-info.clickable:hover {
+  color: #409eff;
+}
+
+.dictionary-info.clickable:hover .dictionary-name {
+  text-decoration: underline;
+}
+
+.dictionary-info .el-icon {
+  font-size: 14px;
+}
+
+.dictionary-name {
+  color: #667eea;
+}
+
 .plugin-description {
   margin: 0 0 12px 0;
   font-size: 13px;
@@ -1367,6 +1486,73 @@ const handleSearch = () => {
 
 .time-divider {
   color: #dcdfe6;
+}
+
+/* 测试状态样式 */
+.test-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.test-status.success .status-dot {
+  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%);
+  box-shadow: 0 0 8px rgba(103, 194, 58, 0.5);
+  animation: pulse-success 2s infinite;
+}
+
+.test-status.failed .status-dot {
+  background: linear-gradient(135deg, #f56c6c 0%, #f78989 100%);
+  box-shadow: 0 0 8px rgba(245, 108, 108, 0.5);
+}
+
+.test-status.pending .status-dot {
+  background: #c0c4cc;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-text {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.test-status.success .status-text {
+  color: #67c23a;
+}
+
+.test-status.failed .status-text {
+  color: #f56c6c;
+}
+
+.test-status.pending .status-text {
+  color: #909399;
+}
+
+.test-time {
+  font-size: 11px;
+  color: #a0a0a0;
+  padding-left: 18px;
+}
+
+@keyframes pulse-success {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(103, 194, 58, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(103, 194, 58, 0.8);
+  }
 }
 
 .card-actions {
@@ -1574,5 +1760,19 @@ const handleSearch = () => {
   justify-content: flex-end;
   margin-top: 24px;
   padding-top: 16px;
+}
+
+/* 编辑模式提示样式 */
+.edit-mode-tip,
+.create-mode-tip {
+  margin-top: 16px;
+}
+
+.edit-mode-tip :deep(.el-alert__title) a {
+  text-decoration: underline;
+}
+
+.edit-mode-tip :deep(.el-alert__title) a:hover {
+  color: #66b1ff;
 }
 </style>

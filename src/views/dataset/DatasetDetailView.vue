@@ -1722,6 +1722,7 @@ onMounted(() => {
           />
           <span class="form-tip">条</span>
         </el-form-item>
+        <el-form-item>
           <template #label>
             <div class="constraints-tip">
               <el-icon><InfoFilled /></el-icon>
@@ -1732,12 +1733,13 @@ onMounted(() => {
             <div v-for="col in columns" :key="col.key" class="constraint-item">
               <div class="constraint-label">
                 <span class="label-text">{{ col.label }}</span>
-              <span class="label-key">({{ col.key }})</span>
+                <span class="label-key">({{ col.key }})</span>
+              </div>
               <el-input
                 v-model="generateForm.constraints[col.key]"
                 type="textarea"
                 :rows="2"
-                :placeholder="例如：生成1-100之间的随机数"
+                placeholder="例如：生成1-100之间的随机数"
                 resize="none"
               />
             </div>
@@ -2696,3 +2698,4 @@ onMounted(() => {
 .constraint-item .el-textarea {
   flex: 1;
 }
+</style>

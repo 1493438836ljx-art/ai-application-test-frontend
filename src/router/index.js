@@ -46,6 +46,12 @@ const router = createRouter({
           meta: { title: '插件管理' },
         },
         {
+          path: 'plugin/:id',
+          name: 'plugin-detail',
+          component: () => import('@/views/plugin/PluginDetailView.vue'),
+          meta: { title: '插件详情' },
+        },
+        {
           path: 'execution',
           name: 'execution',
           component: () => import('@/views/execution/ExecutionView.vue'),
