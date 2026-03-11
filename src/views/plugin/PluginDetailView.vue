@@ -12,8 +12,9 @@ import {
   Plus,
   FullScreen,
   Collection,
+  Delete,
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import hljs from 'highlight.js/lib/core'
 import python from 'highlight.js/lib/languages/python'
 import 'highlight.js/styles/atom-one-dark.css'
@@ -431,6 +432,36 @@ const goBack = () => {
   router.push('/plugin')
 }
 
+// 删除插件
+const handleDelete = async () => {
+  if (!plugin.value) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除插件「${plugin.value.name}」吗？删除后将无法恢复。`,
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+
+    // 模拟删除操作
+    // 实际项目中这里应该调用 API 删除插件
+    // await deletePlugin(plugin.value.id)
+
+    ElMessage.success('插件删除成功')
+    router.push('/plugin')
+  } catch (e) {
+    // 用户取消删除
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  }
+}
+
 // 运行测试
 const runTest = async () => {
   isTesting.value = true
@@ -675,8 +706,12 @@ onUnmounted(() => {
             保存
           </el-button>
         </template>
-        <!-- 查看模式：编辑按钮 -->
+        <!-- 查看模式：编辑/删除按钮 -->
         <template v-else>
+          <el-button type="danger" @click="handleDelete">
+            <el-icon><Delete /></el-icon>
+            删除
+          </el-button>
           <el-button type="primary" @click="enterEditMode">
             <el-icon><Edit /></el-icon>
             编辑
