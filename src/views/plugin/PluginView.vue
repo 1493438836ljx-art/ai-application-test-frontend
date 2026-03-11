@@ -66,6 +66,12 @@ const dataDictionaries = ref([
 // 需要关联数据字典的分类
 const categoriesRequireDictionary = ['data', 'execution', 'evaluation']
 
+// 插件来源选项
+const sourceOptions = [
+  { value: 'system', label: '系统' },
+  { value: 'custom', label: '自定义' },
+]
+
 // 插件列表
 const plugins = ref([
   {
@@ -74,6 +80,7 @@ const plugins = ref([
     description: '对输入数据进行清洗和标准化处理，去除多余空白、统一换行符、移除HTML标签',
     category: 'data',
     tags: ['数据处理', '文本清洗'],
+    source: 'system',
     dataDictionaryId: 'dict-1',
     code: `def execute(input_data, config):
     import re
@@ -96,6 +103,7 @@ const plugins = ref([
     description: '从嵌套 JSON 中提取指定路径的数据，支持多级路径访问',
     category: 'data',
     tags: ['数据处理', 'JSON'],
+    source: 'custom',
     dataDictionaryId: 'dict-4',
     code: `def execute(input_data, config):
     import json
@@ -126,6 +134,7 @@ const plugins = ref([
     description: '检测并过滤文本中的敏感词汇，返回过滤后的文本和发现的敏感词列表',
     category: 'data',
     tags: ['数据处理', '安全'],
+    source: 'system',
     dataDictionaryId: 'dict-5',
     code: `def execute(input_data, config):
     text = str(input_data)
@@ -157,6 +166,7 @@ const plugins = ref([
     description: '执行自定义 HTTP 请求，支持 GET、POST 等方法，可配置请求头和请求体',
     category: 'execution',
     tags: ['测试执行', 'HTTP', 'API'],
+    source: 'custom',
     dataDictionaryId: 'dict-2',
     code: `def execute(input_data, config):
     import urllib.request
@@ -191,6 +201,7 @@ const plugins = ref([
     description: '执行 SQL 查询语句，支持 MySQL、PostgreSQL 等数据库',
     category: 'execution',
     tags: ['测试执行', '数据库'],
+    source: 'system',
     dataDictionaryId: 'dict-2',
     code: `def execute(input_data, config):
     # 数据库查询执行器
@@ -221,6 +232,7 @@ const plugins = ref([
     description: '计算两个文本之间的相似度分数，返回0-1之间的浮点数',
     category: 'evaluation',
     tags: ['结果评估', 'NLP'],
+    source: 'custom',
     dataDictionaryId: 'dict-3',
     code: `def execute(input_data, config):
     from difflib import SequenceMatcher
@@ -241,6 +253,7 @@ const plugins = ref([
     description: '分析 API 响应时间并生成统计报告，包括最小值、最大值、平均值、中位数、P95等',
     category: 'evaluation',
     tags: ['结果评估', '性能'],
+    source: 'system',
     dataDictionaryId: 'dict-1',
     code: `def execute(input_data, config):
     times = input_data if isinstance(input_data, list) else [input_data]
@@ -270,6 +283,7 @@ const plugins = ref([
     description: '检查输出中是否包含预期的关键词，支持多个关键词和匹配模式',
     category: 'evaluation',
     tags: ['结果评估', '文本匹配'],
+    source: 'custom',
     dataDictionaryId: 'dict-4',
     code: `def execute(input_data, config):
     import re
@@ -934,6 +948,9 @@ const goToDictionaryDetail = (dictId) => {
               </el-tag>
               <el-tag :type="getStatusType(plugin.status)" size="small">
                 {{ getStatusText(plugin.status) }}
+              </el-tag>
+              <el-tag :type="plugin.source === 'system' ? 'primary' : 'warning'" size="small" effect="plain">
+                {{ plugin.source === 'system' ? '系统' : '自定义' }}
               </el-tag>
             </div>
             <div class="plugin-meta">

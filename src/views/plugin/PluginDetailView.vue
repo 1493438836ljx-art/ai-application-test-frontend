@@ -177,6 +177,7 @@ const loadPlugin = () => {
       description: '对输入数据进行清洗和标准化处理，去除多余空白、统一换行符、移除HTML标签',
       category: 'data',
       tags: ['数据处理', '文本清洗'],
+      source: 'system',
       dataDictionaryId: 'dict-1',
       code: `def execute(input_data, config):
     import re
@@ -199,6 +200,7 @@ const loadPlugin = () => {
       description: '从嵌套 JSON 中提取指定路径的数据，支持多级路径访问',
       category: 'data',
       tags: ['数据处理', 'JSON'],
+      source: 'custom',
       dataDictionaryId: 'dict-2',
       code: `def execute(input_data, config):
     import json
@@ -229,6 +231,7 @@ const loadPlugin = () => {
       description: '检测并过滤文本中的敏感词汇，返回过滤后的文本和发现的敏感词列表',
       category: 'data',
       tags: ['数据处理', '安全'],
+      source: 'system',
       code: `def execute(input_data, config):
     text = str(input_data)
     sensitive_words = config.get('words', '').split(',')
@@ -708,7 +711,7 @@ onUnmounted(() => {
         </template>
         <!-- 查看模式：编辑/删除按钮 -->
         <template v-else>
-          <el-button type="danger" @click="handleDelete">
+          <el-button class="delete-btn" @click="handleDelete">
             <el-icon><Delete /></el-icon>
             删除
           </el-button>
@@ -823,6 +826,13 @@ onUnmounted(() => {
               {{ plugin.status === 'active' ? '已启用' : '已禁用' }}
             </el-tag>
           </template>
+        </el-form-item>
+
+        <!-- 插件来源（只读） -->
+        <el-form-item label="插件来源">
+          <el-tag :type="plugin.source === 'system' ? 'primary' : 'warning'" size="small" effect="plain">
+            {{ plugin.source === 'system' ? '系统' : '自定义' }}
+          </el-tag>
         </el-form-item>
 
         <!-- 数据字典 - 仅当分类为数据处理、测试执行、结果评估时显示 -->
@@ -1415,5 +1425,29 @@ onUnmounted(() => {
 
 .fullscreen-btn:hover {
   color: #abb2bf;
+}
+
+/* 删除按钮样式优化 */
+.delete-btn {
+  border-color: #dcdfe6;
+  background: #fff;
+  color: #606266;
+  transition: all 0.3s ease;
+}
+
+.delete-btn:hover {
+  background: #fef0f0;
+  border-color: #fbc4c4;
+  color: #f56c6c;
+}
+
+.delete-btn:hover .el-icon {
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
 }
 </style>
