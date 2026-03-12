@@ -28,33 +28,45 @@ const router = useRouter()
 // 插件数据
 const plugin = ref(null)
 
-// 编辑状态
-const isEditing = ref(false)
+// 编辑状态 - 每个区块独立编辑
+const isEditingBasicInfo = ref(false)
+const isEditingCode = ref(false)
+const isEditingParams = ref(false)
 const isFullscreen = ref(false)
 const codeTextareaRef = ref(null)
-const editForm = reactive({
+
+// 基本信息编辑表单
+const basicInfoForm = reactive({
   name: '',
   description: '',
   category: 'data',
   tags: [],
-  code: '',
-  params: [],
   status: 'active',
   dataDictionaryId: '',
 })
 
+// 代码编辑表单
+const codeForm = reactive({
+  code: '',
+})
+
+// 参数编辑表单
+const paramsForm = reactive({
+  params: [],
+})
+
 // 代码行数
 const codeLines = computed(() => {
-  const lines = editForm.code.split('\n').length
+  const lines = codeForm.code.split('\n').length
   return Math.max(lines, 15)
 })
 
 // 高亮后的代码
 const highlightedCode = computed(() => {
   try {
-    return hljs.highlight(editForm.code, { language: 'python' }).value
+    return hljs.highlight(codeForm.code, { language: 'python' }).value
   } catch {
-    return editForm.code
+    return codeForm.code
   }
 })
 
@@ -491,7 +503,7 @@ const runTest = async () => {
 
 // 复制代码
 const handleCopyCode = () => {
-  const code = isEditing.value ? editForm.code : plugin.value?.code
+  const code = isEditingCode.value ? codeForm.code : plugin.value?.code
   if (code) {
     navigator.clipboard.writeText(code)
     ElMessage.success('代码已复制到剪贴板')
@@ -537,49 +549,93 @@ const needsDictionary = (category) => {
   return categoriesRequireDictionary.includes(category)
 }
 
-// 进入编辑模式
-const enterEditMode = () => {
+// 进入基本信息编辑模式
+const enterBasicInfoEditMode = () => {
   if (plugin.value) {
-    editForm.name = plugin.value.name
-    editForm.description = plugin.value.description
-    editForm.category = plugin.value.category
-    editForm.tags = [...plugin.value.tags]
-    editForm.code = plugin.value.code
-    editForm.params = plugin.value.params ? plugin.value.params.map(p => ({ ...p })) : []
-    editForm.status = plugin.value.status
-    editForm.dataDictionaryId = plugin.value.dataDictionaryId || ''
-    isEditing.value = true
+    basicInfoForm.name = plugin.value.name
+    basicInfoForm.description = plugin.value.description
+    basicInfoForm.category = plugin.value.category
+    basicInfoForm.tags = [...plugin.value.tags]
+    basicInfoForm.status = plugin.value.status
+    basicInfoForm.dataDictionaryId = plugin.value.dataDictionaryId || ''
+    isEditingBasicInfo.value = true
   }
 }
 
-// 取消编辑
-const cancelEdit = () => {
-  isEditing.value = false
+// 取消基本信息编辑
+const cancelBasicInfoEdit = () => {
+  isEditingBasicInfo.value = false
 }
 
-// 保存编辑
-const saveEdit = () => {
-  if (!editForm.name.trim()) {
+// 保存基本信息
+const saveBasicInfoEdit = () => {
+  if (!basicInfoForm.name.trim()) {
     ElMessage.warning('请输入插件名称')
     return
   }
   // 验证数据字典关联
-  if (needsDictionary(editForm.category) && !editForm.dataDictionaryId) {
+  if (needsDictionary(basicInfoForm.category) && !basicInfoForm.dataDictionaryId) {
     ElMessage.warning('请选择关联的数据字典')
     return
   }
   if (plugin.value) {
-    plugin.value.name = editForm.name
-    plugin.value.description = editForm.description
-    plugin.value.category = editForm.category
-    plugin.value.tags = [...editForm.tags]
-    plugin.value.code = editForm.code
-    plugin.value.params = editForm.params.map(p => ({ ...p }))
-    plugin.value.status = editForm.status
-    plugin.value.dataDictionaryId = needsDictionary(editForm.category) ? editForm.dataDictionaryId : ''
+    plugin.value.name = basicInfoForm.name
+    plugin.value.description = basicInfoForm.description
+    plugin.value.category = basicInfoForm.category
+    plugin.value.tags = [...basicInfoForm.tags]
+    plugin.value.status = basicInfoForm.status
+    plugin.value.dataDictionaryId = needsDictionary(basicInfoForm.category) ? basicInfoForm.dataDictionaryId : ''
     plugin.value.updatedAt = new Date().toISOString().slice(0, 10)
-    isEditing.value = false
-    ElMessage.success('保存成功')
+    isEditingBasicInfo.value = false
+    ElMessage.success('基本信息保存成功')
+  }
+}
+
+// 进入代码编辑模式
+const enterCodeEditMode = () => {
+  if (plugin.value) {
+    codeForm.code = plugin.value.code
+    isEditingCode.value = true
+  }
+}
+
+// 取消代码编辑
+const cancelCodeEdit = () => {
+  isEditingCode.value = false
+  isFullscreen.value = false
+}
+
+// 保存代码
+const saveCodeEdit = () => {
+  if (plugin.value) {
+    plugin.value.code = codeForm.code
+    plugin.value.updatedAt = new Date().toISOString().slice(0, 10)
+    isEditingCode.value = false
+    isFullscreen.value = false
+    ElMessage.success('代码保存成功')
+  }
+}
+
+// 进入参数编辑模式
+const enterParamsEditMode = () => {
+  if (plugin.value) {
+    paramsForm.params = plugin.value.params ? plugin.value.params.map(p => ({ ...p })) : []
+    isEditingParams.value = true
+  }
+}
+
+// 取消参数编辑
+const cancelParamsEdit = () => {
+  isEditingParams.value = false
+}
+
+// 保存参数
+const saveParamsEdit = () => {
+  if (plugin.value) {
+    plugin.value.params = paramsForm.params.map(p => ({ ...p }))
+    plugin.value.updatedAt = new Date().toISOString().slice(0, 10)
+    isEditingParams.value = false
+    ElMessage.success('参数配置保存成功')
   }
 }
 
@@ -598,7 +654,7 @@ const addParam = () => {
 const editParam = (index) => {
   isEditParamMode.value = true
   editingParamIndex.value = index
-  const param = editForm.params[index]
+  const param = paramsForm.params[index]
   paramFormData.name = param.name
   paramFormData.type = param.type
   paramFormData.default = param.default
@@ -621,16 +677,16 @@ const handleParamSubmit = () => {
   }
 
   if (isEditParamMode.value) {
-    editForm.params[editingParamIndex.value] = param
+    paramsForm.params[editingParamIndex.value] = param
   } else {
-    editForm.params.push(param)
+    paramsForm.params.push(param)
   }
   paramDialogVisible.value = false
 }
 
 // 删除参数
 const removeParam = (index) => {
-  editForm.params.splice(index, 1)
+  paramsForm.params.splice(index, 1)
 }
 
 // 切换全屏
@@ -651,7 +707,7 @@ const handleCodeKeydown = (e) => {
     e.preventDefault()
     const start = e.target.selectionStart
     const end = e.target.selectionEnd
-    editForm.code = editForm.code.substring(0, start) + '    ' + editForm.code.substring(end)
+    codeForm.code = codeForm.code.substring(0, start) + '    ' + codeForm.code.substring(end)
     nextTick(() => {
       e.target.selectionStart = e.target.selectionEnd = start + 4
     })
@@ -685,8 +741,8 @@ onUnmounted(() => {
       <div class="header-left">
         <el-button :icon="ArrowLeft" @click="goBack" circle />
         <div class="header-info">
-          <h2>{{ isEditing ? '编辑插件' : plugin.name }}</h2>
-          <div class="header-meta" v-if="!isEditing">
+          <h2>{{ plugin.name }}</h2>
+          <div class="header-meta">
             <span class="meta-item">
               <el-icon><Setting /></el-icon>
               {{ getCategoryText(plugin.category) }}
@@ -698,54 +754,42 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="header-actions">
-        <!-- 编辑模式：保存/取消按钮 -->
-        <template v-if="isEditing">
-          <el-button @click="cancelEdit">
-            <el-icon><Close /></el-icon>
-            取消
-          </el-button>
-          <el-button type="primary" @click="saveEdit">
-            <el-icon><Check /></el-icon>
-            保存
-          </el-button>
-        </template>
-        <!-- 查看模式：编辑/删除按钮 -->
-        <template v-else>
-          <el-button class="delete-btn" @click="handleDelete">
-            <el-icon><Delete /></el-icon>
-            删除
-          </el-button>
-          <el-button type="primary" @click="enterEditMode">
-            <el-icon><Edit /></el-icon>
-            编辑
-          </el-button>
-        </template>
+        <el-button class="delete-btn" @click="handleDelete">
+          <el-icon><Delete /></el-icon>
+          删除
+        </el-button>
       </div>
     </div>
-
-    <!-- 编辑模式提示 -->
-    <el-alert
-      v-if="isEditing"
-      type="warning"
-      title="编辑模式"
-      :closable="false"
-      show-icon
-      style="margin-bottom: 20px"
-    >
-      您正在编辑此插件，修改完成后请点击「保存」按钮保存更改，或点击「取消」放弃修改。
-    </el-alert>
 
     <!-- 插件信息卡片 -->
     <el-card class="info-card">
       <template #header>
-        <span>基本信息</span>
+        <div class="card-header">
+          <span>基本信息</span>
+          <div class="card-actions">
+            <template v-if="isEditingBasicInfo">
+              <el-button size="small" @click="cancelBasicInfoEdit">
+                <el-icon><Close /></el-icon>
+                取消
+              </el-button>
+              <el-button size="small" type="primary" @click="saveBasicInfoEdit">
+                <el-icon><Check /></el-icon>
+                保存
+              </el-button>
+            </template>
+            <el-button v-else size="small" type="primary" @click="enterBasicInfoEditMode">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+          </div>
+        </div>
       </template>
       <el-form label-width="80px" label-position="left">
         <!-- 名称 -->
-        <el-form-item label="插件名称" :required="isEditing">
-          <template v-if="isEditing">
+        <el-form-item label="插件名称" :required="isEditingBasicInfo">
+          <template v-if="isEditingBasicInfo">
             <el-input
-              v-model="editForm.name"
+              v-model="basicInfoForm.name"
               placeholder="请输入插件名称"
               maxlength="50"
               show-word-limit
@@ -758,9 +802,9 @@ onUnmounted(() => {
 
         <!-- 描述 -->
         <el-form-item label="描述">
-          <template v-if="isEditing">
+          <template v-if="isEditingBasicInfo">
             <el-input
-              v-model="editForm.description"
+              v-model="basicInfoForm.description"
               type="textarea"
               :rows="2"
               placeholder="请输入插件功能描述"
@@ -773,8 +817,8 @@ onUnmounted(() => {
 
         <!-- 分类 -->
         <el-form-item label="分类">
-          <template v-if="isEditing">
-            <el-radio-group v-model="editForm.category">
+          <template v-if="isEditingBasicInfo">
+            <el-radio-group v-model="basicInfoForm.category">
               <el-radio-button
                 v-for="cat in categoryOptions"
                 :key="cat.value"
@@ -791,9 +835,9 @@ onUnmounted(() => {
 
         <!-- 标签 -->
         <el-form-item label="标签">
-          <template v-if="isEditing">
+          <template v-if="isEditingBasicInfo">
             <el-select
-              v-model="editForm.tags"
+              v-model="basicInfoForm.tags"
               multiple
               filterable
               allow-create
@@ -815,8 +859,8 @@ onUnmounted(() => {
 
         <!-- 状态 -->
         <el-form-item label="状态">
-          <template v-if="isEditing">
-            <el-radio-group v-model="editForm.status">
+          <template v-if="isEditingBasicInfo">
+            <el-radio-group v-model="basicInfoForm.status">
               <el-radio value="active">启用</el-radio>
               <el-radio value="inactive">禁用</el-radio>
             </el-radio-group>
@@ -837,12 +881,12 @@ onUnmounted(() => {
 
         <!-- 数据字典 - 仅当分类为数据处理、测试执行、结果评估时显示 -->
         <el-form-item
-          v-if="needsDictionary(isEditing ? editForm.category : plugin.category)"
+          v-if="needsDictionary(isEditingBasicInfo ? basicInfoForm.category : plugin.category)"
           label="数据字典"
         >
-          <template v-if="isEditing">
+          <template v-if="isEditingBasicInfo">
             <el-select
-              v-model="editForm.dataDictionaryId"
+              v-model="basicInfoForm.dataDictionaryId"
               placeholder="请选择关联的数据字典"
               style="width: 100%"
               clearable
@@ -875,7 +919,7 @@ onUnmounted(() => {
         </el-form-item>
 
         <!-- 测试状态（只读） -->
-        <el-form-item label="测试状态" v-if="!isEditing">
+        <el-form-item label="测试状态" v-if="!isEditingBasicInfo">
           <div class="test-status" :class="plugin.testResult">
             <span class="status-dot"></span>
             <span class="status-text">{{ getTestResultText(plugin.testResult) }}</span>
@@ -884,31 +928,47 @@ onUnmounted(() => {
         </el-form-item>
 
         <!-- 更新时间（只读） -->
-        <el-form-item label="更新时间" v-if="!isEditing">
+        <el-form-item label="更新时间" v-if="!isEditingBasicInfo">
           <span class="form-value">{{ plugin.updatedAt }}</span>
         </el-form-item>
       </el-form>
     </el-card>
 
     <!-- 代码区域 -->
-    <el-card class="code-card" :class="{ 'is-fullscreen': isFullscreen && isEditing }">
+    <el-card class="code-card" :class="{ 'is-fullscreen': isFullscreen && isEditingCode }">
       <template #header>
         <div class="card-header">
           <span>插件代码</span>
-          <div class="code-actions">
-            <el-button type="primary" link @click="handleCopyCode">
-              <el-icon><CopyDocument /></el-icon>
-              复制代码
-            </el-button>
-            <el-button v-if="isEditing" type="primary" link @click="isFullscreen = !isFullscreen">
-              <el-icon><FullScreen /></el-icon>
-              {{ isFullscreen ? '退出全屏' : '全屏编辑' }}
-            </el-button>
+          <div class="card-actions">
+            <template v-if="isEditingCode">
+              <el-button size="small" @click="cancelCodeEdit">
+                <el-icon><Close /></el-icon>
+                取消
+              </el-button>
+              <el-button size="small" type="primary" @click="saveCodeEdit">
+                <el-icon><Check /></el-icon>
+                保存
+              </el-button>
+              <el-button type="primary" link @click="isFullscreen = !isFullscreen">
+                <el-icon><FullScreen /></el-icon>
+                {{ isFullscreen ? '退出全屏' : '全屏编辑' }}
+              </el-button>
+            </template>
+            <template v-else>
+              <el-button type="primary" link @click="handleCopyCode">
+                <el-icon><CopyDocument /></el-icon>
+                复制代码
+              </el-button>
+              <el-button size="small" type="primary" @click="enterCodeEditMode">
+                <el-icon><Edit /></el-icon>
+                编辑
+              </el-button>
+            </template>
           </div>
         </div>
       </template>
       <!-- 编辑模式：代码编辑器 -->
-      <template v-if="isEditing">
+      <template v-if="isEditingCode">
         <div class="code-editor-wrapper">
           <div class="editor-header">
             <span class="editor-title">
@@ -929,7 +989,7 @@ onUnmounted(() => {
               <pre class="code-highlight"><code v-html="highlightedCode"></code></pre>
               <textarea
                 ref="codeTextareaRef"
-                v-model="editForm.code"
+                v-model="codeForm.code"
                 class="code-input"
                 placeholder="请输入 Python 代码"
                 spellcheck="false"
@@ -951,16 +1011,32 @@ onUnmounted(() => {
       <template #header>
         <div class="card-header">
           <span>配置参数</span>
-          <el-button v-if="isEditing" type="primary" link @click="addParam">
-            <el-icon><Plus /></el-icon>
-            添加参数
-          </el-button>
+          <div class="card-actions">
+            <template v-if="isEditingParams">
+              <el-button size="small" @click="cancelParamsEdit">
+                <el-icon><Close /></el-icon>
+                取消
+              </el-button>
+              <el-button size="small" type="primary" @click="saveParamsEdit">
+                <el-icon><Check /></el-icon>
+                保存
+              </el-button>
+              <el-button type="primary" link @click="addParam">
+                <el-icon><Plus /></el-icon>
+                添加参数
+              </el-button>
+            </template>
+            <el-button v-else size="small" type="primary" @click="enterParamsEditMode">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+          </div>
         </div>
       </template>
 
       <!-- 编辑模式：可编辑参数表格 -->
-      <template v-if="isEditing">
-        <el-table :data="editForm.params" border v-if="editForm.params.length > 0">
+      <template v-if="isEditingParams">
+        <el-table :data="paramsForm.params" border v-if="paramsForm.params.length > 0">
           <el-table-column prop="name" label="参数名" width="150" />
           <el-table-column prop="type" label="类型" width="100">
             <template #default="{ row }">
@@ -991,8 +1067,8 @@ onUnmounted(() => {
       </template>
     </el-card>
 
-    <!-- 测试区域（仅查看模式显示） -->
-    <el-card class="test-card" v-if="!isEditing">
+    <!-- 测试区域 -->
+    <el-card class="test-card">
       <template #header>
         <span>测试运行</span>
       </template>
@@ -1115,6 +1191,12 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .form-value {
