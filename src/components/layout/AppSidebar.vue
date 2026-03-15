@@ -9,6 +9,7 @@ import {
   DataAnalysis,
   Monitor,
   ChatDotRound,
+  Share,
 } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { computed, ref } from 'vue'
@@ -19,10 +20,12 @@ const router = useRouter()
 
 const menuItems = [
   { index: '1', title: '首页', icon: 'HomeFilled', route: '/dashboard' },
-  { index: '2', title: '测评集管理', icon: 'FolderOpened', route: '/dataset' },
-  { index: '3', title: '环境管理', icon: 'Setting', route: '/environment' },
-  { index: '4', title: '插件管理', icon: 'Connection', route: '/plugin' },
-  { index: '5', title: '报告管理', icon: 'DataAnalysis', route: '/result' },
+  { index: '2', title: '工作流', icon: 'Share', route: '/workflow' },
+  { index: '3', title: '任务管理', icon: 'VideoPlay', route: '/task' },
+  { index: '4', title: '测评集管理', icon: 'FolderOpened', route: '/dataset' },
+  { index: '5', title: '环境管理', icon: 'Setting', route: '/environment' },
+  { index: '6', title: '插件管理', icon: 'Connection', route: '/plugin' },
+  { index: '7', title: '报告管理', icon: 'DataAnalysis', route: '/result' },
 ]
 
 const iconComponents = {
@@ -33,6 +36,7 @@ const iconComponents = {
   Connection,
   VideoPlay,
   DataAnalysis,
+  Share,
 }
 
 const iconColors = {
@@ -43,6 +47,7 @@ const iconColors = {
   Connection: '#10b981',
   VideoPlay: '#3b82f6',
   DataAnalysis: '#06b6d4',
+  Share: '#f97316',
 }
 
 const getIcon = (iconName) => iconComponents[iconName]

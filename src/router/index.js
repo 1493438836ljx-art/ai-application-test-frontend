@@ -63,7 +63,26 @@ const router = createRouter({
           component: () => import('@/views/result/ResultDetailView.vue'),
           meta: { title: '报告详情' },
         },
+        {
+          path: 'workflow',
+          name: 'workflow',
+          component: () => import('@/views/workflow/WorkflowView.vue'),
+          meta: { title: '工作流管理' },
+        },
+        {
+          path: 'task',
+          name: 'task',
+          component: () => import('@/views/task/TaskView.vue'),
+          meta: { title: '任务管理' },
+        },
       ],
+    },
+    // 工作流编辑器 - 全屏模式，不使用 MainLayout
+    {
+      path: '/workflow/:id',
+      name: 'workflow-editor',
+      component: () => import('@/views/workflow/WorkflowEditorView.vue'),
+      meta: { title: '工作流编辑器' },
     },
   ],
 })
