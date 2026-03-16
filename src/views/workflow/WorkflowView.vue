@@ -16,6 +16,10 @@ import {
 
 const router = useRouter()
 
+// 分页相关状态
+const currentPage = ref(1)
+const pageSize = ref(10)
+
 // 工作流列表数据
 const workflowList = ref([
   {
@@ -62,8 +66,8 @@ const searchKeyword = ref('')
 // 状态筛选
 const statusFilter = ref('')
 
-// 筛选后的列表
-const filteredList = computed(() => {
+// 筛选后的完整列表
+const allFilteredList = computed(() => {
   let result = workflowList.value
 
   if (searchKeyword.value) {
@@ -81,6 +85,27 @@ const filteredList = computed(() => {
 
   return result
 })
+
+// 总数
+const filteredTotal = computed(() => allFilteredList.value.length)
+
+// 分页后的列表
+const filteredList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return allFilteredList.value.slice(start, end)
+})
+
+// 分页大小变化处理
+const handleSizeChange = (val) => {
+  pageSize.value = val
+  currentPage.value = 1 // 切换每页条数时重置到第一页
+}
+
+// 页码变化处理
+const handlePageChange = (val) => {
+  currentPage.value = val
+}
 
 // 状态标签配置
 const statusConfig = {
@@ -276,6 +301,19 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- 分页组件 -->
+    <div class="pagination-wrapper" v-if="filteredTotal > 0">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="filteredTotal"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
+        @current-change="handlePageChange"
+      />
+    </div>
   </div>
 </template>
 
@@ -456,5 +494,12 @@ onMounted(() => {
 
 .footer-actions .el-button:hover {
   background: #eef2ff;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 16px;
 }
 </style>
