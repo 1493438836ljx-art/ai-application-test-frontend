@@ -2213,6 +2213,26 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- 输出参数定义 -->
+            <div class="config-item">
+              <div class="config-item-header">
+                <label>输出参数定义</label>
+              </div>
+              <div class="output-params-definition">
+                <div class="param-item">
+                  <span class="param-name">output</span>
+                  <span class="param-type">
+                    {{ selectedNode.config.inputType === 'text' ? '字符串 (String)' : '数组 (JSON Array)' }}
+                  </span>
+                </div>
+                <div class="param-desc">
+                  {{ selectedNode.config.inputType === 'text'
+                    ? '清洗后的文本内容，返回字符串类型'
+                    : '清洗后的数据数组，每条记录包含选定字段的清洗结果' }}
+                </div>
+              </div>
+            </div>
+
             <!-- 清洗规则配置 -->
             <div class="config-item">
               <div class="config-item-header">
@@ -3250,5 +3270,48 @@ onUnmounted(() => {
 
 .config-item-header label {
   margin-bottom: 0;
+}
+
+/* 输出参数定义样式 */
+.output-params-definition {
+  padding: 12px 16px;
+  background: #f0f9ff;
+  border-radius: 8px;
+  border: 1px solid #bae6fd;
+}
+
+.param-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.param-name {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #6366f1;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.param-type {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #ecfdf5;
+  color: #059669;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #a7f3d0;
+}
+
+.param-desc {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
 }
 </style>
