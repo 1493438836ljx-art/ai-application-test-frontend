@@ -165,9 +165,12 @@ const handleProgress = () => {
 /* 重置页面样式 */
 .home-page {
   min-height: 100vh;
+  height: auto;
   background: #f5f5f5;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* 顶部导航栏 */

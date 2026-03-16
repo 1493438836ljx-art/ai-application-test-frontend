@@ -267,9 +267,12 @@ const handleCardClick = (card) => {
 /* 重置页面样式 */
 .home-page {
   min-height: 100vh;
+  height: auto;
   background: #fff;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* 顶部导航栏 */

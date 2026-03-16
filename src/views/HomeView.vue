@@ -3,7 +3,15 @@ import TheWelcome from '../components/TheWelcome.vue'
 </script>
 
 <template>
-  <main>
+  <main class="home-main">
     <TheWelcome />
   </main>
 </template>
+
+<style scoped>
+.home-main {
+  min-height: 100vh;
+  overflow-y: auto;
+  padding: 20px;
+}
+</style>
