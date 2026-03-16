@@ -843,6 +843,137 @@ const getAvailableVariables = () => {
   }))
 }
 
+// 获取节点的输入参数（用于在节点方框中显示）
+const getNodeInputParams = (node) => {
+  if (!node) return []
+
+  // 开始节点：从 inputParams 获取
+  if (node.type === 'start') {
+    return (node.inputParams || []).map((param) => ({
+      name: param.name || 'input',
+      type: param.type || 'String',
+    }))
+  }
+
+  // 文本清洗节点：根据配置确定输入参数
+  if (node.type === 'textClean') {
+    const inputType = node.config?.inputType || 'text'
+    return [
+      {
+        name: 'input',
+        type: inputType === 'text' ? 'String' : 'Dataset',
+      },
+    ]
+  }
+
+  // 条件判断节点：从变量配置获取
+  if (node.type === 'condition') {
+    const variables = new Set()
+    if (node.config?.branches) {
+      node.config.branches.forEach((branch) => {
+        branch.conditions?.forEach((cond) => {
+          if (cond.variable) {
+            variables.add(cond.variable)
+          }
+        })
+      })
+    }
+    return Array.from(variables).map((v) => ({
+      name: v,
+      type: 'Any',
+    }))
+  }
+
+  // 其他节点：默认输入参数
+  return [{ name: 'input', type: 'Any' }]
+}
+
+// 获取节点的输出参数（用于在节点方框中显示）
+const getNodeOutputParams = (node) => {
+  if (!node) return []
+
+  // 开始节点：输出所有输入参数
+  if (node.type === 'start') {
+    return (node.inputParams || []).map((param) => ({
+      name: param.name || 'output',
+      type: param.type || 'String',
+    }))
+  }
+
+  // 结束节点：没有输出
+  if (node.type === 'end') {
+    return []
+  }
+
+  // 文本清洗节点：根据输入类型确定输出
+  if (node.type === 'textClean') {
+    const inputType = node.config?.inputType || 'text'
+    return [
+      {
+        name: 'output',
+        type: inputType === 'text' ? 'String' : 'JSON Array',
+      },
+    ]
+  }
+
+  // 条件判断节点：输出布尔值
+  if (node.type === 'condition') {
+    return [{ name: 'result', type: 'Boolean' }]
+  }
+
+  // AI自动化节点
+  if (node.type === 'aiAuto') {
+    return [
+      { name: 'response', type: 'String' },
+      { name: 'tokens', type: 'Number' },
+    ]
+  }
+
+  // 接口自动化节点
+  if (node.type === 'apiAuto') {
+    return [
+      { name: 'response', type: 'JSON' },
+      { name: 'statusCode', type: 'Number' },
+    ]
+  }
+
+  // 文本生成节点
+  if (node.type === 'textGenerate') {
+    return [{ name: 'text', type: 'String' }]
+  }
+
+  // 图像生成节点
+  if (node.type === 'imageGenerate') {
+    return [{ name: 'imageUrl', type: 'String' }]
+  }
+
+  // 音频转文本节点
+  if (node.type === 'audioToText') {
+    return [{ name: 'text', type: 'String' }]
+  }
+
+  // 裁判模型节点
+  if (node.type === 'judgeModel') {
+    return [
+      { name: 'score', type: 'Number' },
+      { name: 'reason', type: 'String' },
+    ]
+  }
+
+  // 时延相关节点
+  if (['firstTokenLatency', 'tokenOutputTime', 'e2eLatency'].includes(node.type)) {
+    return [{ name: 'latency', type: 'Number' }]
+  }
+
+  // 报告生成节点
+  if (node.type === 'reportGenerate') {
+    return [{ name: 'reportUrl', type: 'String' }]
+  }
+
+  // 默认输出参数
+  return [{ name: 'output', type: 'Any' }]
+}
+
 // 初始化条件判断节点配置
 const initConditionConfig = () => {
   if (!selectedNode.value) return
@@ -1585,6 +1716,42 @@ onUnmounted(() => {
                 <span class="node-name">{{ node.name }}</span>
               </div>
 
+              <!-- 输入参数显示 -->
+              <div
+                v-if="getNodeInputParams(node).length > 0"
+                class="node-params input-params"
+              >
+                <div class="params-label">输入</div>
+                <div class="params-list">
+                  <div
+                    v-for="(param, idx) in getNodeInputParams(node)"
+                    :key="'in-' + idx"
+                    class="param-item"
+                  >
+                    <span class="param-name">{{ param.name }}</span>
+                    <span class="param-type">{{ param.type }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 输出参数显示 -->
+              <div
+                v-if="getNodeOutputParams(node).length > 0"
+                class="node-params output-params"
+              >
+                <div class="params-label">输出</div>
+                <div class="params-list">
+                  <div
+                    v-for="(param, idx) in getNodeOutputParams(node)"
+                    :key="'out-' + idx"
+                    class="param-item"
+                  >
+                    <span class="param-name">{{ param.name }}</span>
+                    <span class="param-type">{{ param.type }}</span>
+                  </div>
+                </div>
+              </div>
+
               <!-- 输入端口 -->
               <div v-if="node.inputs.length > 0" class="node-inputs">
                 <div
@@ -2310,7 +2477,7 @@ onUnmounted(() => {
 
 .flow-node {
   position: absolute;
-  width: 200px;
+  width: 220px;
   background: #fff;
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -2330,10 +2497,11 @@ onUnmounted(() => {
 }
 
 .node-content {
-  padding: 16px;
+  padding: 12px 14px;
   min-height: 40px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  position: relative;
 }
 
 .node-header {
@@ -2355,6 +2523,73 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 500;
   color: #1f2937;
+}
+
+/* 节点参数显示样式 */
+.node-params {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.node-params .params-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.node-params .params-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.node-params .param-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.node-params .param-name {
+  color: #374151;
+  font-weight: 500;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-params .param-type {
+  color: #6b7280;
+  font-size: 10px;
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* 输入参数样式 */
+.node-params.input-params .params-label {
+  color: #6366f1;
+}
+
+.node-params.input-params .param-type {
+  background: #eef2ff;
+  color: #6366f1;
+}
+
+/* 输出参数样式 */
+.node-params.output-params .params-label {
+  color: #10b981;
+}
+
+.node-params.output-params .param-type {
+  background: #ecfdf5;
+  color: #10b981;
 }
 
 .config-panel {
