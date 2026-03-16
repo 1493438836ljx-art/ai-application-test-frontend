@@ -1745,14 +1745,18 @@ onUnmounted(() => {
                   v-for="(branch, index) in selectedNode.config.branches"
                   :key="branch.id"
                   class="condition-branch"
+                  :class="'branch-color-' + ((index % 4) + 1)"
                 >
                   <div class="branch-header">
-                    <el-input
-                      v-model="branch.name"
-                      placeholder="分支名称"
-                      size="small"
-                      class="branch-name-input"
-                    />
+                    <div class="branch-title">
+                      <span class="branch-index">{{ index + 1 }}</span>
+                      <el-input
+                        v-model="branch.name"
+                        placeholder="分支名称"
+                        size="small"
+                        class="branch-name-input"
+                      />
+                    </div>
                     <el-button
                       v-if="selectedNode.config.branches.length > 1"
                       type="danger"
@@ -1764,65 +1768,81 @@ onUnmounted(() => {
                   </div>
                   <div class="branch-conditions">
                     <div class="condition-logic-toggle">
+                      <span class="logic-label">多条件关系：</span>
                       <el-radio-group v-model="branch.logic" size="small">
-                        <el-radio-button value="and">且(AND)</el-radio-button>
-                        <el-radio-button value="or">或(OR)</el-radio-button>
+                        <el-radio-button value="and">
+                          <span class="logic-btn">且 (AND)</span>
+                        </el-radio-button>
+                        <el-radio-button value="or">
+                          <span class="logic-btn">或 (OR)</span>
+                        </el-radio-button>
                       </el-radio-group>
                     </div>
-                    <div
-                      v-for="(condition, condIndex) in branch.conditions"
-                      :key="condition.id"
-                      class="condition-row"
-                    >
-                      <el-select
-                        v-model="condition.variable"
-                        placeholder="选择变量"
-                        size="small"
-                        class="condition-var"
-                        filterable
-                        allow-create
+                    <div class="conditions-list">
+                      <div
+                        v-for="(condition, condIndex) in branch.conditions"
+                        :key="condition.id"
+                        class="condition-row"
                       >
-                        <el-option
-                          v-for="param in getAvailableVariables()"
-                          :key="param.name"
-                          :label="param.name"
-                          :value="param.name"
-                        />
-                      </el-select>
-                      <el-select
-                        v-model="condition.operator"
-                        placeholder="运算符"
-                        size="small"
-                        class="condition-op"
-                      >
-                        <el-option label="等于" value="eq" />
-                        <el-option label="不等于" value="neq" />
-                        <el-option label="大于" value="gt" />
-                        <el-option label="大于等于" value="gte" />
-                        <el-option label="小于" value="lt" />
-                        <el-option label="小于等于" value="lte" />
-                        <el-option label="包含" value="contains" />
-                        <el-option label="不包含" value="notContains" />
-                        <el-option label="为空" value="isEmpty" />
-                        <el-option label="不为空" value="isNotEmpty" />
-                        <el-option label="为真" value="isTrue" />
-                        <el-option label="为假" value="isFalse" />
-                      </el-select>
-                      <el-input
-                        v-if="!['isEmpty', 'isNotEmpty', 'isTrue', 'isFalse'].includes(condition.operator)"
-                        v-model="condition.value"
-                        placeholder="比较值"
-                        size="small"
-                        class="condition-val"
-                      />
-                      <el-button
-                        type="danger"
-                        text
-                        size="small"
-                        :icon="Delete"
-                        class="condition-delete-btn"
-                        @click="removeCondition(index, condIndex)"
-                      />
+                        <span class="condition-label">条件 {{ condIndex + 1 }}</span>
+                        <div class="condition-fields">
+                          <el-select
+                            v-model="condition.variable"
+                            placeholder="选择变量"
+                            size="small"
+                            class="condition-var"
+                            filterable
+                            allow-create
+                          >
+                            <el-option
+                              v-for="param in getAvailableVariables()"
+                              :key="param.name"
+                              :label="param.name"
+                              :value="param.name"
+                            />
+                          </el-select>
+                          <el-select
+                            v-model="condition.operator"
+                            placeholder="运算符"
+                            size="small"
+                            class="condition-op"
+                          >
+                            <el-option label="等于" value="eq" />
+                            <el-option label="不等于" value="neq" />
+                            <el-option label="大于" value="gt" />
+                            <el-option label="大于等于" value="gte" />
+                            <el-option label="小于" value="lt" />
+                            <el-option label="小于等于" value="lte" />
+                            <el-option label="包含" value="contains" />
+                            <el-option label="不包含" value="notContains" />
+                            <el-option label="为空" value="isEmpty" />
+                            <el-option label="不为空" value="isNotEmpty" />
+                            <el-option label="为真" value="isTrue" />
+                            <el-option label="为假" value="isFalse" />
+                          </el-select>
+                          <el-input
+                            v-if="!['isEmpty', 'isNotEmpty', 'isTrue', 'isFalse'].includes(condition.operator)"
+                            v-model="condition.value"
+                            placeholder="比较值"
+                            size="small"
+                            class="condition-val"
+                          />
+                          <div
+                            v-else
+                            class="condition-val-placeholder"
+                          >
+                            —
+                          </div>
+                          <el-button
+                            type="danger"
+                            text
+                            size="small"
+                            :icon="Delete"
+                            class="condition-delete-btn"
+                            @click="removeCondition(index, condIndex)"
+                          />
+                        </div>
+                      </div>
                     </div>
                     <el-button
                       type="primary"
@@ -1839,7 +1859,10 @@ onUnmounted(() => {
                 <!-- 默认分支 -->
                 <div class="condition-branch default-branch">
                   <div class="branch-header">
-                    <span class="branch-name-label">默认分支</span>
+                    <div class="branch-title">
+                      <span class="branch-index default">☆</span>
+                      <span class="branch-name-label">默认分支</span>
+                    </div>
                     <span class="branch-hint">当以上条件都不满足时执行</span>
                   </div>
                 </div>
@@ -2130,43 +2153,105 @@ onUnmounted(() => {
 .condition-branches {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .condition-branch {
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
-  background: #fafbfc;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.condition-branch:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 分支颜色主题 */
+.condition-branch.branch-color-1 {
+  border-left: 4px solid #6366f1;
+}
+
+.condition-branch.branch-color-2 {
+  border-left: 4px solid #10b981;
+}
+
+.condition-branch.branch-color-3 {
+  border-left: 4px solid #f59e0b;
+}
+
+.condition-branch.branch-color-4 {
+  border-left: 4px solid #ec4899;
 }
 
 .condition-branch.default-branch {
-  background: #f0fdf4;
-  border-color: #86efac;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px dashed #86efac;
+  border-left: 4px solid #22c55e;
 }
 
 .branch-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  background: #fff;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   border-bottom: 1px solid #e5e7eb;
 }
 
 .condition-branch.default-branch .branch-header {
-  background: #f0fdf4;
-  border-bottom-color: #86efac;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-bottom: 1px dashed #86efac;
+}
+
+.branch-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.branch-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #6366f1;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.condition-branch.branch-color-2 .branch-index {
+  background: #10b981;
+}
+
+.condition-branch.branch-color-3 .branch-index {
+  background: #f59e0b;
+}
+
+.condition-branch.branch-color-4 .branch-index {
+  background: #ec4899;
+}
+
+.branch-index.default {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  font-size: 14px;
 }
 
 .branch-name-input {
   flex: 1;
-  max-width: 200px;
+  max-width: 180px;
 }
 
 .branch-name-label {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: #1f2937;
 }
 
@@ -2174,32 +2259,82 @@ onUnmounted(() => {
   font-size: 12px;
   color: #6b7280;
   margin-left: 8px;
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 .branch-conditions {
-  padding: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .condition-logic-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
   margin-bottom: 4px;
+}
+
+.logic-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.logic-btn {
+  font-size: 12px;
+}
+
+.conditions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .condition-row {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #fafbfc;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.condition-row:hover {
+  background: #f8fafc;
+  border-color: #d1d5db;
+}
+
+.condition-label {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.condition-fields {
+  display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .condition-var {
   flex: 1;
-  min-width: 100px;
+  min-width: 120px;
 }
 
 .condition-op {
-  width: 110px;
+  width: 100px;
   flex-shrink: 0;
 }
 
@@ -2208,14 +2343,43 @@ onUnmounted(() => {
   min-width: 100px;
 }
 
+.condition-val-placeholder {
+  flex: 1;
+  min-width: 100px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 14px;
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
 .condition-delete-btn {
   flex-shrink: 0;
   padding: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.condition-row:hover .condition-delete-btn {
+  opacity: 1;
 }
 
 .add-condition-btn {
   align-self: flex-start;
   margin-top: 4px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: #f0f9ff;
+  border: 1px dashed #60a5fa;
+  transition: all 0.2s ease;
+}
+
+.add-condition-btn:hover {
+  background: #e0f2fe;
+  border-color: #3b82f6;
 }
 
 /* 合并的连线/添加按钮 */
