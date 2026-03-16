@@ -304,70 +304,6 @@ const environments = ref([
         status: 'active',
       },
     ],
-    uiSteps: [
-      {
-        id: 'step-1',
-        name: '打开登录页面',
-        type: 'navigate',
-        value: 'https://customer-service.example.com/login',
-        description: '导航到客服系统登录页面',
-        order: 1,
-        status: 'active',
-      },
-      {
-        id: 'step-2',
-        name: '输入用户名',
-        type: 'input',
-        selector: '#username',
-        selectorType: 'css',
-        value: 'test_user',
-        description: '在用户名输入框中输入测试账号',
-        order: 2,
-        status: 'active',
-      },
-      {
-        id: 'step-3',
-        name: '输入密码',
-        type: 'input',
-        selector: '#password',
-        selectorType: 'css',
-        value: 'test_password',
-        description: '在密码输入框中输入测试密码',
-        order: 3,
-        status: 'active',
-      },
-      {
-        id: 'step-4',
-        name: '点击登录按钮',
-        type: 'click',
-        selector: '.login-btn',
-        selectorType: 'css',
-        description: '点击登录按钮提交表单',
-        order: 4,
-        status: 'active',
-      },
-      {
-        id: 'step-5',
-        name: '等待页面加载',
-        type: 'wait',
-        waitTime: 2000,
-        description: '等待登录后的页面完全加载',
-        order: 5,
-        status: 'active',
-      },
-      {
-        id: 'step-6',
-        name: '验证登录成功',
-        type: 'assert_text',
-        selector: '.welcome-message',
-        selectorType: 'css',
-        value: '欢迎',
-        assertType: 'contains',
-        description: '验证页面显示欢迎信息',
-        order: 6,
-        status: 'active',
-      },
-    ],
     plugins: [
       {
         id: 'plugin-1',
@@ -452,38 +388,6 @@ const environments = ref([
           { source: 'body', varName: 'answer', jsonPath: '$.data.answer' },
         ],
         order: 2,
-        status: 'active',
-      },
-    ],
-    uiSteps: [
-      {
-        id: 'step-7',
-        name: '打开问答页面',
-        type: 'navigate',
-        value: 'https://doc-qa.example.com/qa',
-        description: '打开文档问答系统',
-        order: 1,
-        status: 'active',
-      },
-      {
-        id: 'step-8',
-        name: '输入问题',
-        type: 'input',
-        selector: '#question-input',
-        selectorType: 'css',
-        value: '{{input}}',
-        description: '输入测试问题',
-        order: 2,
-        status: 'active',
-      },
-      {
-        id: 'step-9',
-        name: '点击提交',
-        type: 'click',
-        selector: '//button[contains(text(), "提交")]',
-        selectorType: 'xpath',
-        description: '点击提交按钮',
-        order: 3,
         status: 'active',
       },
     ],
@@ -576,7 +480,6 @@ const environments = ref([
         status: 'inactive',
       },
     ],
-    uiSteps: [],
     plugins: [],
     status: 'inactive',
     lastTestTime: '2024-02-25 10:00',
@@ -636,7 +539,6 @@ const environments = ref([
         status: 'active',
       },
     ],
-    uiSteps: [],
     plugins: [
       {
         id: 'plugin-4',
@@ -709,7 +611,6 @@ const environments = ref([
         status: 'active',
       },
     ],
-    uiSteps: [],
     plugins: [
       {
         id: 'plugin-5',
@@ -765,7 +666,6 @@ const environments = ref([
         status: 'active',
       },
     ],
-    uiSteps: [],
     plugins: [
       {
         id: 'plugin-6',
@@ -838,7 +738,6 @@ const environments = ref([
         status: 'active',
       },
     ],
-    uiSteps: [],
     plugins: [
       {
         id: 'plugin-7',
@@ -897,9 +796,6 @@ const detailActiveTab = ref('api')
 const apiCurrentPage = ref(1)
 const apiPageSize = ref(10)
 
-// UI 步骤分页
-const uiStepCurrentPage = ref(1)
-const uiStepPageSize = ref(10)
 
 // API 接口分页数据
 const paginatedApis = computed(() => {
@@ -909,22 +805,9 @@ const paginatedApis = computed(() => {
   return apis.slice(start, start + apiPageSize.value)
 })
 
-// UI 步骤分页数据
-const paginatedUiSteps = computed(() => {
-  if (!currentEnvironment.value || !currentEnvironment.value.uiSteps) return []
-  const steps = [...currentEnvironment.value.uiSteps].sort((a, b) => a.order - b.order)
-  const start = (uiStepCurrentPage.value - 1) * uiStepPageSize.value
-  return steps.slice(start, start + uiStepPageSize.value)
-})
-
 // API 接口总数
 const apiTotal = computed(() => {
   return currentEnvironment.value?.apis?.length || 0
-})
-
-// UI 步骤总数
-const uiStepTotal = computed(() => {
-  return currentEnvironment.value?.uiSteps?.length || 0
 })
 
 // API 分页处理
@@ -935,234 +818,6 @@ const handleApiPageChange = (page) => {
 const handleApiSizeChange = (size) => {
   apiPageSize.value = size
   apiCurrentPage.value = 1
-}
-
-// UI 步骤分页处理
-const handleUiStepPageChange = (page) => {
-  uiStepCurrentPage.value = page
-}
-
-const handleUiStepSizeChange = (size) => {
-  uiStepPageSize.value = size
-  uiStepCurrentPage.value = 1
-}
-
-// UI 自动化步骤类型
-const uiStepTypes = [
-  { value: 'navigate', label: '打开页面' },
-  { value: 'click', label: '点击元素' },
-  { value: 'input', label: '输入文本' },
-  { value: 'select', label: '选择下拉框' },
-  { value: 'wait', label: '等待' },
-  { value: 'assert_text', label: '断言文本' },
-  { value: 'assert_element', label: '断言元素' },
-  { value: 'screenshot', label: '截图' },
-  { value: 'scroll', label: '滚动' },
-  { value: 'hover', label: '悬停' },
-]
-
-// UI 步骤对话框
-const uiStepDialogVisible = ref(false)
-const uiStepFormRef = ref()
-const isEditUiStepMode = ref(false)
-const editingUiStepId = ref('')
-
-// UI 步骤表单数据
-const uiStepFormData = reactive({
-  name: '',
-  type: 'click',
-  selector: '',
-  selectorType: 'css', // css, xpath
-  value: '',
-  waitTime: 1000,
-  assertType: 'equals', // equals, contains, matches
-  description: '',
-  status: 'active',
-})
-
-// UI 步骤表单验证规则
-const uiStepFormRules = {
-  name: [{ required: true, message: '请输入步骤名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择步骤类型', trigger: 'change' }],
-}
-
-// 获取 UI 步骤类型标签
-const getUiStepTypeLabel = (type) => {
-  const found = uiStepTypes.find(t => t.value === type)
-  return found ? found.label : type
-}
-
-// 获取 UI 步骤类型颜色
-const getUiStepTypeColor = (type) => {
-  const colors = {
-    navigate: '',
-    click: 'success',
-    input: 'warning',
-    select: 'warning',
-    wait: 'info',
-    assert_text: 'danger',
-    assert_element: 'danger',
-    screenshot: '',
-    scroll: 'info',
-    hover: 'success',
-  }
-  return colors[type] || ''
-}
-
-// 打开新建 UI 步骤对话框
-const openCreateUiStepDialog = () => {
-  if (!currentEnvironment.value) return
-  isEditUiStepMode.value = false
-  editingUiStepId.value = ''
-  resetUiStepForm()
-  uiStepDialogVisible.value = true
-}
-
-// 打开编辑 UI 步骤对话框
-const openEditUiStepDialog = (step) => {
-  isEditUiStepMode.value = true
-  editingUiStepId.value = step.id
-  uiStepFormData.name = step.name
-  uiStepFormData.type = step.type
-  uiStepFormData.selector = step.selector || ''
-  uiStepFormData.selectorType = step.selectorType || 'css'
-  uiStepFormData.value = step.value || ''
-  uiStepFormData.waitTime = step.waitTime || 1000
-  uiStepFormData.assertType = step.assertType || 'equals'
-  uiStepFormData.description = step.description || ''
-  uiStepFormData.status = step.status || 'active'
-  uiStepDialogVisible.value = true
-}
-
-// 重置 UI 步骤表单
-const resetUiStepForm = () => {
-  uiStepFormData.name = ''
-  uiStepFormData.type = 'click'
-  uiStepFormData.selector = ''
-  uiStepFormData.selectorType = 'css'
-  uiStepFormData.value = ''
-  uiStepFormData.waitTime = 1000
-  uiStepFormData.assertType = 'equals'
-  uiStepFormData.description = ''
-  uiStepFormData.status = 'active'
-  uiStepFormRef.value?.resetFields()
-}
-
-// 提交 UI 步骤表单
-const handleUiStepSubmit = async () => {
-  if (!uiStepFormRef.value || !currentEnvironment.value) return
-
-  await uiStepFormRef.value.validate((valid) => {
-    if (valid) {
-      // 验证必填字段
-      if (needsSelector(uiStepFormData.type) && !uiStepFormData.selector.trim()) {
-        ElMessage.warning('请输入元素选择器')
-        return
-      }
-      if (needsValue(uiStepFormData.type) && !uiStepFormData.value.trim()) {
-        ElMessage.warning('请输入值')
-        return
-      }
-
-      const steps = currentEnvironment.value.uiSteps || []
-
-      if (isEditUiStepMode.value) {
-        const index = steps.findIndex(s => s.id === editingUiStepId.value)
-        if (index !== -1) {
-          steps[index] = {
-            ...steps[index],
-            name: uiStepFormData.name,
-            type: uiStepFormData.type,
-            selector: uiStepFormData.selector,
-            selectorType: uiStepFormData.selectorType,
-            value: uiStepFormData.value,
-            waitTime: uiStepFormData.waitTime,
-            assertType: uiStepFormData.assertType,
-            description: uiStepFormData.description,
-            status: uiStepFormData.status,
-          }
-          ElMessage.success('步骤更新成功')
-        }
-      } else {
-        const newStep = {
-          id: `step-${Date.now()}`,
-          name: uiStepFormData.name,
-          type: uiStepFormData.type,
-          selector: uiStepFormData.selector,
-          selectorType: uiStepFormData.selectorType,
-          value: uiStepFormData.value,
-          waitTime: uiStepFormData.waitTime,
-          assertType: uiStepFormData.assertType,
-          description: uiStepFormData.description,
-          order: steps.length + 1,
-          status: uiStepFormData.status,
-        }
-        steps.push(newStep)
-        currentEnvironment.value.uiSteps = steps
-        ElMessage.success('步骤创建成功')
-      }
-      uiStepDialogVisible.value = false
-    }
-  })
-}
-
-// 判断步骤类型是否需要选择器
-const needsSelector = (type) => {
-  return ['click', 'input', 'select', 'assert_text', 'assert_element', 'hover'].includes(type)
-}
-
-// 判断步骤类型是否需要值
-const needsValue = (type) => {
-  return ['input', 'select', 'assert_text'].includes(type)
-}
-
-// 判断步骤类型是否需要等待时间
-const needsWaitTime = (type) => {
-  return ['wait'].includes(type)
-}
-
-// 移动 UI 步骤顺序
-const moveUiStepOrder = (step, direction) => {
-  if (!currentEnvironment.value || !currentEnvironment.value.uiSteps) return
-
-  const steps = currentEnvironment.value.uiSteps
-  const index = steps.findIndex(s => s.id === step.id)
-  if (index === -1) return
-
-  const newIndex = direction === 'up' ? index - 1 : index + 1
-  if (newIndex < 0 || newIndex >= steps.length) return
-
-  const temp = steps[index].order
-  steps[index].order = steps[newIndex].order
-  steps[newIndex].order = temp
-
-  steps.sort((a, b) => a.order - b.order)
-  ElMessage.success('顺序已调整')
-}
-
-// 切换 UI 步骤状态
-const toggleUiStepStatus = (step) => {
-  step.status = step.status === 'active' ? 'inactive' : 'active'
-  ElMessage.success(`已${step.status === 'active' ? '启用' : '禁用'}步骤「${step.name}」`)
-}
-
-// 删除 UI 步骤
-const handleDeleteUiStep = (step) => {
-  ElMessageBox.confirm(`确定要删除步骤「${step.name}」吗？`, '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(() => {
-    if (!currentEnvironment.value) return
-    const index = currentEnvironment.value.uiSteps.findIndex(s => s.id === step.id)
-    if (index !== -1) {
-      currentEnvironment.value.uiSteps.splice(index, 1)
-      currentEnvironment.value.uiSteps.forEach((s, i) => {
-        s.order = i + 1
-      })
-      ElMessage.success('删除成功')
-    }
-  })
 }
 
 // 表单验证规则
@@ -2135,67 +1790,6 @@ const runConnectivityTest = async () => {
             <el-empty v-else description="暂无接口配置，点击上方按钮添加" />
           </el-tab-pane>
 
-          <el-tab-pane label="UI 自动化" name="ui">
-            <div class="tab-header">
-              <span>配置 UI 自动化测试步骤，模拟用户操作测试应用</span>
-              <el-button type="primary" :icon="Plus" @click="openCreateUiStepDialog">添加步骤</el-button>
-            </div>
-            <!-- UI 步骤列表 -->
-            <div class="ui-steps-list" v-if="currentEnvironment.uiSteps && currentEnvironment.uiSteps.length > 0">
-              <el-card v-for="step in paginatedUiSteps" :key="step.id" class="ui-step-card" shadow="hover">
-                <div class="ui-step-content">
-                  <div class="ui-step-order">{{ step.order }}</div>
-                  <div class="ui-step-info">
-                    <div class="ui-step-header">
-                      <el-tag :type="getUiStepTypeColor(step.type)" size="small">
-                        {{ getUiStepTypeLabel(step.type) }}
-                      </el-tag>
-                      <span class="ui-step-name">{{ step.name }}</span>
-                      <el-tag :type="getStatusType(step.status)" size="small">
-                        {{ getStatusText(step.status) }}
-                      </el-tag>
-                    </div>
-                    <div class="ui-step-detail" v-if="step.selector">
-                      <span class="detail-label">选择器:</span>
-                      <code>{{ step.selector }}</code>
-                    </div>
-                    <div class="ui-step-detail" v-if="step.value">
-                      <span class="detail-label">值:</span>
-                      <span>{{ step.value }}</span>
-                    </div>
-                    <div class="ui-step-detail" v-if="step.description">
-                      <span class="detail-label">描述:</span>
-                      <span>{{ step.description }}</span>
-                    </div>
-                  </div>
-                  <div class="ui-step-actions">
-                    <el-button-group>
-                      <el-button size="small" :icon="ArrowUp" @click="moveUiStepOrder(step, 'up')" :disabled="step.order === 1" />
-                      <el-button size="small" :icon="ArrowDown" @click="moveUiStepOrder(step, 'down')" :disabled="step.order === currentEnvironment.uiSteps.length" />
-                    </el-button-group>
-                    <el-button size="small" @click="toggleUiStepStatus(step)">
-                      {{ step.status === 'active' ? '禁用' : '启用' }}
-                    </el-button>
-                    <el-button size="small" @click="openEditUiStepDialog(step)">编辑</el-button>
-                    <el-button size="small" type="danger" @click="handleDeleteUiStep(step)">删除</el-button>
-                  </div>
-                </div>
-              </el-card>
-              <!-- 分页 -->
-              <div class="pagination-wrapper" v-if="uiStepTotal > 0">
-                <el-pagination
-                  v-model:current-page="uiStepCurrentPage"
-                  v-model:page-size="uiStepPageSize"
-                  :page-sizes="[10, 20, 50, 100]"
-                  :total="uiStepTotal"
-                  layout="total, sizes, prev, pager, next, jumper"
-                  @size-change="handleUiStepSizeChange"
-                  @current-change="handleUiStepPageChange"
-                />
-              </div>
-            </div>
-            <el-empty v-else description="暂无 UI 自动化步骤，点击上方按钮添加" />
-          </el-tab-pane>
         </el-tabs>
       </div>
     </template>
@@ -2818,114 +2412,6 @@ const runConnectivityTest = async () => {
       </template>
     </el-dialog>
 
-    <!-- 新建/编辑 UI 步骤对话框 -->
-    <el-dialog
-      v-model="uiStepDialogVisible"
-      :title="isEditUiStepMode ? '编辑步骤' : '添加步骤'"
-      width="560px"
-      :close-on-click-modal="false"
-    >
-      <el-form
-        ref="uiStepFormRef"
-        :model="uiStepFormData"
-        :rules="uiStepFormRules"
-        label-width="100px"
-        label-position="left"
-      >
-        <el-form-item label="步骤名称" prop="name">
-          <el-input v-model="uiStepFormData.name" placeholder="如：点击登录按钮" />
-        </el-form-item>
-
-        <el-form-item label="步骤类型" prop="type">
-          <el-select v-model="uiStepFormData.type" style="width: 100%">
-            <el-option
-              v-for="t in uiStepTypes"
-              :key="t.value"
-              :label="t.label"
-              :value="t.value"
-            />
-          </el-select>
-        </el-form-item>
-
-        <!-- 选择器配置（部分步骤类型需要） -->
-        <template v-if="needsSelector(uiStepFormData.type)">
-          <el-form-item label="选择器类型">
-            <el-radio-group v-model="uiStepFormData.selectorType">
-              <el-radio value="css">CSS</el-radio>
-              <el-radio value="xpath">XPath</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item label="元素选择器">
-            <el-input
-              v-model="uiStepFormData.selector"
-              :placeholder="uiStepFormData.selectorType === 'css' ? '如：#login-btn, .submit-button' : '如：//button[@id=&quot;login&quot;]'"
-            />
-          </el-form-item>
-        </template>
-
-        <!-- 值配置（部分步骤类型需要） -->
-        <template v-if="needsValue(uiStepFormData.type)">
-          <el-form-item :label="uiStepFormData.type === 'input' ? '输入内容' : (uiStepFormData.type === 'select' ? '选择值' : '期望值')">
-            <el-input v-model="uiStepFormData.value" placeholder="请输入值" />
-          </el-form-item>
-          <el-form-item label="断言方式" v-if="uiStepFormData.type === 'assert_text'">
-            <el-select v-model="uiStepFormData.assertType" style="width: 100%">
-              <el-option label="等于" value="equals" />
-              <el-option label="包含" value="contains" />
-              <el-option label="匹配正则" value="matches" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- 等待时间配置 -->
-        <template v-if="needsWaitTime(uiStepFormData.type)">
-          <el-form-item label="等待时间">
-            <el-input-number v-model="uiStepFormData.waitTime" :min="100" :max="60000" :step="100" style="width: 100%" />
-            <span style="margin-left: 8px; color: #909399; font-size: 12px;">毫秒</span>
-          </el-form-item>
-        </template>
-
-        <!-- 导航类型需要 URL -->
-        <template v-if="uiStepFormData.type === 'navigate'">
-          <el-form-item label="目标 URL">
-            <el-input v-model="uiStepFormData.value" placeholder="如：https://example.com/login" />
-          </el-form-item>
-        </template>
-
-        <!-- 滚动类型需要方向 -->
-        <template v-if="uiStepFormData.type === 'scroll'">
-          <el-form-item label="滚动方向">
-            <el-select v-model="uiStepFormData.value" style="width: 100%">
-              <el-option label="向上" value="up" />
-              <el-option label="向下" value="down" />
-              <el-option label="到顶部" value="top" />
-              <el-option label="到底部" value="bottom" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <el-form-item label="描述说明">
-          <el-input
-            v-model="uiStepFormData.description"
-            type="textarea"
-            :rows="2"
-            placeholder="步骤的详细说明（可选）"
-          />
-        </el-form-item>
-
-        <el-form-item label="状态">
-          <el-radio-group v-model="uiStepFormData.status">
-            <el-radio value="active">启用</el-radio>
-            <el-radio value="inactive">禁用</el-radio>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="uiStepDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleUiStepSubmit">确定</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -4363,85 +3849,6 @@ const runConnectivityTest = async () => {
   margin-bottom: 16px;
   color: #606266;
   font-size: 14px;
-}
-
-/* UI 步骤列表样式 */
-.ui-steps-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ui-step-card {
-  border-radius: 8px;
-}
-
-.ui-step-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.ui-step-order {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.ui-step-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.ui-step-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-
-.ui-step-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.ui-step-detail {
-  font-size: 13px;
-  color: #606266;
-  margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ui-step-detail .detail-label {
-  color: #909399;
-  flex-shrink: 0;
-}
-
-.ui-step-detail code {
-  background: #f5f7fa;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 12px;
-  color: #409eff;
-}
-
-.ui-step-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
 }
 
 /* 插件列表样式 */
