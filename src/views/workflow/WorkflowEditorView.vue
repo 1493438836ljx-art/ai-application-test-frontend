@@ -108,6 +108,49 @@ const nodeTypes = [
   { type: 'reportAnalysis', name: '报告分析', icon: 'TrendCharts', color: '#0ea5e9', category: 'report' },
 ]
 
+// 变量类型级联选择器数据
+const typeOptions = [
+  { value: 'string', label: 'String' },
+  { value: 'number', label: 'Number' },
+  { value: 'boolean', label: 'Boolean' },
+  { value: 'object', label: 'Object' },
+  {
+    value: 'array',
+    label: 'Array',
+    children: [
+      { value: 'string', label: 'String' },
+      { value: 'number', label: 'Number' },
+      { value: 'boolean', label: 'Boolean' },
+      { value: 'object', label: 'Object' },
+    ],
+  },
+]
+
+// 将参数的 type 和 elementType 转换为级联选择器的值
+const getTypeValue = (param) => {
+  if (!param.type) return ['string']
+  if (param.type === 'array') {
+    return ['array', param.elementType || 'string']
+  }
+  return [param.type]
+}
+
+// 处理级联选择器值变化
+const handleTypeChange = (value, row) => {
+  if (!value || value.length === 0) {
+    row.type = 'string'
+    row.elementType = undefined
+    return
+  }
+  if (value[0] === 'array') {
+    row.type = 'array'
+    row.elementType = value[1] || 'string'
+  } else {
+    row.type = value[0]
+    row.elementType = undefined
+  }
+}
+
 // 节点图标映射
 const iconComponents = {
   VideoPlay,
@@ -1045,7 +1088,7 @@ const formatParamType = (param) => {
       boolean: 'Boolean',
       object: 'Object',
     }
-    return `Array<${elementTypes[param.elementType] || 'String'}>`
+    return `Array[${elementTypes[param.elementType] || 'String'}]`
   }
   // 首字母大写
   return param.type.charAt(0).toUpperCase() + param.type.slice(1)
@@ -2396,32 +2439,22 @@ onUnmounted(() => {
                     <el-input v-model="row.name" placeholder="请输入变量名" size="small" />
                   </template>
                 </el-table-column>
-                <el-table-column label="变量类型" min-width="120">
+                <el-table-column label="变量类型" min-width="160">
                   <template #default="{ row }">
-                    <el-select v-model="row.type" placeholder="选择类型" size="small" style="width: 100%">
-                      <el-option label="String" value="string" />
-                      <el-option label="Number" value="number" />
-                      <el-option label="Boolean" value="boolean" />
-                      <el-option label="Object" value="object" />
-                      <el-option label="Array" value="array" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="元素类型" min-width="120">
-                  <template #default="{ row }">
-                    <el-select
-                      v-if="row.type === 'array'"
-                      v-model="row.elementType"
-                      placeholder="选择元素类型"
+                    <el-cascader
+                      :model-value="getTypeValue(row)"
+                      :options="typeOptions"
+                      :props="{
+                        expandTrigger: 'hover',
+                        emitPath: true,
+                        checkStrictly: false,
+                      }"
+                      placeholder="选择类型"
                       size="small"
                       style="width: 100%"
-                    >
-                      <el-option label="String" value="string" />
-                      <el-option label="Number" value="number" />
-                      <el-option label="Boolean" value="boolean" />
-                      <el-option label="Object" value="object" />
-                    </el-select>
-                    <span v-else class="element-type-placeholder">-</span>
+                      clearable
+                      @update:model-value="(val) => handleTypeChange(val, row)"
+                    />
                   </template>
                 </el-table-column>
                 <el-table-column label="必填" width="80" align="center">
