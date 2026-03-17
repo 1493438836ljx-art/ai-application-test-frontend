@@ -2135,35 +2135,24 @@ onUnmounted(() => {
                 </div>
               </template>
 
-              <!-- 结束节点：合并显示输入/输出参数，仅保留左侧端口 -->
+              <!-- 结束节点：单行显示输出参数，左侧有端口 -->
               <template v-else-if="node.type === 'end'">
+                <div class="input-port end-node-port" @mouseup.stop="endConnection(node, null, 0, $event)"></div>
                 <div
                   v-if="getNodeInputParams(node).length > 0"
-                  class="node-params input-params"
+                  class="node-params inline-params end-inline-params"
                 >
-                  <div class="params-label">输入/输出</div>
-                  <table class="params-table">
-                    <tbody>
-                      <tr
-                        v-for="(param, idx) in getNodeInputParams(node)"
-                        :key="'inout-' + idx"
-                        class="param-row"
-                      >
-                        <!-- 输入端口在左边 -->
-                        <td class="param-port-cell input-port-cell">
-                          <div
-                            class="input-port"
-                            :title="param.name"
-                            @mouseup.stop="endConnection(node, param, idx, $event)"
-                          ></div>
-                        </td>
-                        <td class="param-name-cell" :class="{ 'param-name-empty': !param.name }">
-                          {{ param.name || '新建参数' }}
-                        </td>
-                        <td class="param-type-cell">{{ param.type }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <span class="params-label">输出</span>
+                  <span class="params-inline-list">
+                    <span
+                      v-for="(param, idx) in getNodeInputParams(node)"
+                      :key="'inout-' + idx"
+                      class="param-inline-item"
+                      :title="param.name + ': ' + param.type"
+                    >
+                      {{ param.name || '新建参数' }}
+                    </span>
+                  </span>
                 </div>
               </template>
 
@@ -3251,6 +3240,39 @@ onUnmounted(() => {
 .output-port-cell {
   position: relative;
   width: 12px;
+}
+
+/* 结束节点端口样式 */
+.end-node-port {
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+  cursor: crosshair;
+  transition: all 0.2s;
+  z-index: 5;
+}
+
+.end-node-port:hover {
+  background: #22d3ee;
+  transform: translateY(-50%) scale(1.2);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}
+
+/* 结束节点单行参数样式 - 标签使用红色 */
+.node-params.end-inline-params .params-label {
+  color: #ef4444;
+}
+
+.node-params.end-inline-params .param-inline-item {
+  background: #fee2e2;
+  color: #ef4444;
 }
 
 .config-panel {
