@@ -384,31 +384,44 @@ const getConnectionPathPart = (connection, part) => {
   const distance = Math.abs(x2 - x1)
   const controlOffset = Math.max(40, Math.min(distance * 0.4, 120))
 
-  // 计算中点位置（t=0.5）
-  const cx1 = x1 + controlOffset
-  const cy1 = y1
-  const cx2 = x2 - controlOffset
-  const cy2 = y2
+  // 原始三次贝塞尔曲线的四个控制点
+  // P0 = 起点, P1 = 第一个控制点, P2 = 第二个控制点, P3 = 终点
+  const p0x = x1
+  const p0y = y1
+  const p1x = x1 + controlOffset
+  const p1y = y1
+  const p2x = x2 - controlOffset
+  const p2y = y2
+  const p3x = x2
+  const p3y = y2
 
-  // 三次贝塞尔曲线在 t=0.5 时的点
+  // 使用 de Casteljau 算法在 t=0.5 处分割贝塞尔曲线
   const t = 0.5
-  const mt = 1 - t
-  const midX = mt * mt * mt * x1 + 3 * mt * mt * t * cx1 + 3 * mt * t * t * cx2 + t * t * t * x2
-  const midY = mt * mt * mt * y1 + 3 * mt * mt * t * cy1 + 3 * mt * t * t * cy2 + t * t * t * y2
 
-  // 计算中点处的导数方向，用于平滑连接
-  const dx = 3 * mt * mt * (cx1 - x1) + 6 * mt * t * (cx2 - cx1) + 3 * t * t * (x2 - cx2)
-  const dy = 3 * mt * mt * (cy1 - y1) + 6 * mt * t * (cy2 - cy1) + 3 * t * t * (y2 - cy2)
-  const len = Math.sqrt(dx * dx + dy * dy)
-  const normDx = len > 0 ? dx / len * 5 : 0
-  const normDy = len > 0 ? dy / len * 5 : 0
+  // 第一层插值
+  const q0x = (1 - t) * p0x + t * p1x
+  const q0y = (1 - t) * p0y + t * p1y
+  const q1x = (1 - t) * p1x + t * p2x
+  const q1y = (1 - t) * p1y + t * p2y
+  const q2x = (1 - t) * p2x + t * p3x
+  const q2y = (1 - t) * p2y + t * p3y
+
+  // 第二层插值
+  const r0x = (1 - t) * q0x + t * q1x
+  const r0y = (1 - t) * q0y + t * q1y
+  const r1x = (1 - t) * q1x + t * q2x
+  const r1y = (1 - t) * q1y + t * q2y
+
+  // 中点（第三层插值）
+  const midX = (1 - t) * r0x + t * r1x
+  const midY = (1 - t) * r0y + t * r1y
 
   if (part === 'start') {
-    // 前半部分：从起点到中点（略微超出中点以避免间隙）
-    return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${midX + normDx} ${midY + normDy}`
+    // 前半部分：从起点到中点，控制点是 Q0 和 R0
+    return `M ${p0x} ${p0y} C ${q0x} ${q0y}, ${r0x} ${r0y}, ${midX} ${midY}`
   } else {
-    // 后半部分：从中点到终点（略微提前起点以避免间隙）
-    return `M ${midX - normDx} ${midY - normDy} C ${cx2} ${cy2}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`
+    // 后半部分：从中点到终点，控制点是 R1 和 Q2
+    return `M ${midX} ${midY} C ${r1x} ${r1y}, ${q2x} ${q2y}, ${p3x} ${p3y}`
   }
 }
 
@@ -420,29 +433,41 @@ const getTempConnectionPathPart = (part) => {
   const distance = Math.abs(endX - startX)
   const controlOffset = Math.max(40, Math.min(distance * 0.4, 120))
 
-  // 贝塞尔曲线控制点
-  const cx1 = startX + controlOffset
-  const cy1 = startY
-  const cx2 = endX - controlOffset
-  const cy2 = endY
+  // 原始三次贝塞尔曲线的四个控制点
+  const p0x = startX
+  const p0y = startY
+  const p1x = startX + controlOffset
+  const p1y = startY
+  const p2x = endX - controlOffset
+  const p2y = endY
+  const p3x = endX
+  const p3y = endY
 
-  // 三次贝塞尔曲线在 t=0.5 时的点
+  // 使用 de Casteljau 算法在 t=0.5 处分割贝塞尔曲线
   const t = 0.5
-  const mt = 1 - t
-  const midX = mt * mt * mt * startX + 3 * mt * mt * t * cx1 + 3 * mt * t * t * cx2 + t * t * t * endX
-  const midY = mt * mt * mt * startY + 3 * mt * mt * t * cy1 + 3 * mt * t * t * cy2 + t * t * t * endY
 
-  // 计算中点处的导数方向
-  const dx = 3 * mt * mt * (cx1 - startX) + 6 * mt * t * (cx2 - cx1) + 3 * t * t * (endX - cx2)
-  const dy = 3 * mt * mt * (cy1 - startY) + 6 * mt * t * (cy2 - cy1) + 3 * t * t * (endY - cy2)
-  const len = Math.sqrt(dx * dx + dy * dy)
-  const normDx = len > 0 ? dx / len * 5 : 0
-  const normDy = len > 0 ? dy / len * 5 : 0
+  // 第一层插值
+  const q0x = (1 - t) * p0x + t * p1x
+  const q0y = (1 - t) * p0y + t * p1y
+  const q1x = (1 - t) * p1x + t * p2x
+  const q1y = (1 - t) * p1y + t * p2y
+  const q2x = (1 - t) * p2x + t * p3x
+  const q2y = (1 - t) * p2y + t * p3y
+
+  // 第二层插值
+  const r0x = (1 - t) * q0x + t * q1x
+  const r0y = (1 - t) * q0y + t * q1y
+  const r1x = (1 - t) * q1x + t * q2x
+  const r1y = (1 - t) * q1y + t * q2y
+
+  // 中点（第三层插值）
+  const midX = (1 - t) * r0x + t * r1x
+  const midY = (1 - t) * r0y + t * r1y
 
   if (part === 'start') {
-    return `M ${startX} ${startY} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${midX + normDx} ${midY + normDy}`
+    return `M ${p0x} ${p0y} C ${q0x} ${q0y}, ${r0x} ${r0y}, ${midX} ${midY}`
   } else {
-    return `M ${midX - normDx} ${midY - normDy} C ${cx2} ${cy2}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`
+    return `M ${midX} ${midY} C ${r1x} ${r1y}, ${q2x} ${q2y}, ${p3x} ${p3y}`
   }
 }
 
@@ -2035,7 +2060,40 @@ onUnmounted(() => {
 
           <!-- 连线层（终点部分 - 在节点上层） -->
           <svg class="connections-layer connections-layer-top" :width="canvas.width" :height="canvas.height">
-            <!-- 已有连线（终点部分） -->
+            <!-- 箭头标记定义（需要在每个 SVG 中独立定义） -->
+            <defs>
+              <marker
+                id="arrowhead-top"
+                markerWidth="6"
+                markerHeight="6"
+                refX="5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M 0 0 L 5 3 L 0 6" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </marker>
+              <marker
+                id="arrowhead-top-selected"
+                markerWidth="6"
+                markerHeight="6"
+                refX="5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M 0 0 L 5 3 L 0 6" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </marker>
+              <marker
+                id="arrowhead-top-temp"
+                markerWidth="6"
+                markerHeight="6"
+                refX="5"
+                refY="3"
+                orient="auto"
+              >
+                <path d="M 0 0 L 5 3 L 0 6" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
+              </marker>
+            </defs>
+            <!-- 已有连线（终点部分）- 直接在此路径上添加 marker-end -->
             <path
               v-for="conn in connections"
               :key="conn.id + '-end'"
@@ -2045,6 +2103,7 @@ onUnmounted(() => {
                 selected: selectedConnection?.id === conn.id,
                 hovered: hoveredConnection?.id === conn.id
               }"
+              :marker-end="selectedConnection?.id === conn.id ? 'url(#arrowhead-top-selected)' : (hoveredConnection?.id === conn.id ? 'url(#arrowhead-top-selected)' : 'url(#arrowhead-top)')"
               :style="{ pointerEvents: 'none' }"
             />
             <!-- 临时连线（终点部分） -->
@@ -2052,19 +2111,7 @@ onUnmounted(() => {
               v-if="tempConnectionPath"
               :d="getTempConnectionPathPart('end')"
               class="connection-path temp"
-              :style="{ pointerEvents: 'none' }"
-            />
-            <!-- 连线箭头（在终点显示） -->
-            <path
-              v-for="conn in connections"
-              :key="'arrow-' + conn.id"
-              :d="getConnectionPathPart(conn, 'end')"
-              class="connection-path-arrow"
-              :class="{
-                selected: selectedConnection?.id === conn.id,
-                hovered: hoveredConnection?.id === conn.id
-              }"
-              marker-end="url(#arrowhead)"
+              marker-end="url(#arrowhead-top-temp)"
               :style="{ pointerEvents: 'none' }"
             />
           </svg>
@@ -2743,12 +2790,6 @@ onUnmounted(() => {
 
 .connections-layer-top {
   z-index: 25; /* 节点上层，z-index 高于节点 */
-}
-
-.connection-path-arrow {
-  fill: none;
-  stroke: transparent;
-  pointer-events: none;
 }
 
 .connection-path {
