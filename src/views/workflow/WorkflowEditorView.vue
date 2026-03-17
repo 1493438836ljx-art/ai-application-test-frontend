@@ -803,6 +803,7 @@ const contextMenu = reactive({
   x: 0,
   y: 0,
   node: null,
+  connection: null, // 连线右键菜单支持
 })
 
 // 显示右键菜单
@@ -822,6 +823,7 @@ const showContextMenu = (node, event) => {
 const hideContextMenu = () => {
   contextMenu.visible = false
   contextMenu.node = null
+  contextMenu.connection = null
 }
 
 // 右键菜单操作：重命名
@@ -846,6 +848,41 @@ const contextMenuDelete = () => {
 const contextMenuAutoLayout = () => {
   hideContextMenu()
   autoLayoutNodes()
+}
+
+// 显示连线右键菜单
+const showConnectionContextMenu = (connection, event) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  selectConnection(connection)
+
+  contextMenu.visible = true
+  contextMenu.x = event.clientX
+  contextMenu.y = event.clientY
+  contextMenu.connection = connection
+}
+
+// 连线右键菜单操作：添加节点
+const connectionMenuAddNode = () => {
+  if (!contextMenu.connection) return
+  const connection = contextMenu.connection
+  hideContextMenu()
+
+  // 计算连线中点位置作为弹窗位置
+  const midpoint = getConnectionMidpoint(connection)
+  if (midpoint) {
+    popoverPosition.value = { x: midpoint.x, y: midpoint.y }
+  }
+  showAddPopoverForConnection(connection, { stopPropagation: () => {}, clientX: midpoint?.x || 0, clientY: midpoint?.y || 0 })
+}
+
+// 连线右键菜单操作：删除连线
+const connectionMenuDelete = () => {
+  if (!contextMenu.connection) return
+  selectedConnection.value = contextMenu.connection
+  hideContextMenu()
+  deleteSelectedConnection()
 }
 
 // 自动调整节点布局
@@ -1014,12 +1051,15 @@ const selectConnection = (connection, event) => {
   hideContextMenu()
   selectedConnection.value = connection
   selectedNode.value = null
+  // 选中连线时同时设置悬浮状态，保持视觉效果一致
+  hoveredConnection.value = connection
 }
 
 // 取消选择
 const deselectAll = () => {
   selectedNode.value = null
   selectedConnection.value = null
+  hoveredConnection.value = null
   showAddNodePopover.value = null
 }
 
@@ -2001,6 +2041,7 @@ onUnmounted(() => {
                 hovered: hoveredConnection?.id === conn.id
               }"
               @click.stop="selectConnection(conn, $event)"
+              @contextmenu.prevent.stop="showConnectionContextMenu(conn, $event)"
               @mouseenter="handleConnectionMouseEnter(conn)"
               @mouseleave="handleConnectionMouseLeave"
             />
@@ -2307,6 +2348,23 @@ onUnmounted(() => {
           </div>
           <div class="context-menu-divider" />
           <div class="context-menu-item danger" @click="contextMenuDelete">
+            <el-icon><Delete /></el-icon>
+            <span>删除</span>
+          </div>
+        </div>
+
+        <!-- 连线右键菜单 -->
+        <div
+          v-if="contextMenu.visible && contextMenu.connection"
+          class="context-menu"
+          :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        >
+          <div class="context-menu-item" @click="connectionMenuAddNode">
+            <el-icon><Plus /></el-icon>
+            <span>添加节点</span>
+          </div>
+          <div class="context-menu-divider" />
+          <div class="context-menu-item danger" @click="connectionMenuDelete">
             <el-icon><Delete /></el-icon>
             <span>删除</span>
           </div>
