@@ -2032,6 +2032,38 @@ onUnmounted(() => {
                 </div>
               </template>
 
+              <!-- 结束节点：合并显示输入/输出参数，仅保留左侧端口 -->
+              <template v-else-if="node.type === 'end'">
+                <div
+                  v-if="getNodeInputParams(node).length > 0"
+                  class="node-params input-params"
+                >
+                  <div class="params-label">输入/输出</div>
+                  <table class="params-table">
+                    <tbody>
+                      <tr
+                        v-for="(param, idx) in getNodeInputParams(node)"
+                        :key="'inout-' + idx"
+                        class="param-row"
+                      >
+                        <!-- 输入端口在左边 -->
+                        <td class="param-port-cell input-port-cell">
+                          <div
+                            class="input-port"
+                            :title="param.name"
+                            @mouseup.stop="endConnection(node, param, idx, $event)"
+                          ></div>
+                        </td>
+                        <td class="param-name-cell" :class="{ 'param-name-empty': !param.name }">
+                          {{ param.name || '新建参数' }}
+                        </td>
+                        <td class="param-type-cell">{{ param.type }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
+
               <!-- 其他节点：分别显示输入和输出参数 -->
               <template v-else>
                 <!-- 输入参数表格 -->
