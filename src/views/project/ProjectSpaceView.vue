@@ -15,6 +15,7 @@ import {
 } from '@element-plus/icons-vue'
 import DatasetManagement from '@/components/project/DatasetManagement.vue'
 import PluginManagement from '@/components/project/PluginManagement.vue'
+import TestExecution from '@/components/project/TestExecution.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -290,16 +291,7 @@ const goBack = () => {
 
       <!-- 测试执行 -->
       <div v-if="activeMenu === 'test'" class="content-panel">
-        <div class="panel-header">
-          <h2 class="panel-title">测试执行</h2>
-          <p class="panel-subtitle">执行测试任务并监控进度</p>
-        </div>
-        <div class="panel-body">
-          <div class="placeholder-content">
-            <el-icon :size="48" color="#c0c4cc"><VideoPlay /></el-icon>
-            <p>测试执行功能开发中...</p>
-          </div>
-        </div>
+        <TestExecution />
       </div>
 
       <!-- 报告管理 -->
