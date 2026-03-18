@@ -88,6 +88,7 @@ const nodeTypes = [
   { type: 'loop', name: '循环', icon: 'Timer', color: '#3b82f6', category: 'logic' },
   // 测试准备
   { type: 'envConnect', name: '环境对接', icon: 'Monitor', color: '#64748b', category: 'testPrep' },
+  { type: 'tableExtract', name: '表格提取', icon: 'Grid', color: '#10b981', category: 'testPrep' },
   { type: 'textClean', name: '文本清洗', icon: 'Document', color: '#6366f1', category: 'testPrep' },
   { type: 'textDedupe', name: '文本去重', icon: 'Files', color: '#8b5cf6', category: 'testPrep' },
   { type: 'textGeneralize', name: '文本泛化', icon: 'EditPen', color: '#a855f7', category: 'testPrep' },
@@ -115,6 +116,7 @@ const nodeTypes = [
 
 // 节点功能描述映射
 const nodeDescriptions = {
+  tableExtract: '从表格文件中提取指定列的数据',
   textClean: '对文本数据进行清洗、过滤和标准化处理',
 }
 
@@ -200,10 +202,21 @@ const nodes = ref([
     config: {},
   },
   {
+    id: 'tableExtract-1',
+    type: 'tableExtract',
+    name: '表格提取',
+    x: 380,
+    y: 300,
+    inputs: [{ id: 'in-te-1', name: '输入' }],
+    outputs: [{ id: 'out-te-1', name: '输出' }],
+    outputParams: [{ name: 'column1', type: 'String' }],
+    config: {},
+  },
+  {
     id: 'textClean-1',
     type: 'textClean',
     name: '文本清洗',
-    x: 380,
+    x: 660,
     y: 300,
     inputs: [{ id: 'in-tc-1', name: '输入' }],
     outputs: [{ id: 'out-tc-1', name: '输出' }],
@@ -213,7 +226,7 @@ const nodes = ref([
     id: 'envConnect-1',
     type: 'envConnect',
     name: '环境对接',
-    x: 660,
+    x: 940,
     y: 300,
     inputs: [{ id: 'in-env-1', name: '输入' }],
     outputs: [{ id: 'out-env-1', name: '输出' }],
@@ -223,7 +236,7 @@ const nodes = ref([
     id: 'apiAuto-1',
     type: 'apiAuto',
     name: '接口自动化',
-    x: 940,
+    x: 1220,
     y: 300,
     inputs: [{ id: 'in-api-1', name: '输入' }],
     outputs: [{ id: 'out-api-1', name: '输出' }],
@@ -233,7 +246,7 @@ const nodes = ref([
     id: 'judgeModel-1',
     type: 'judgeModel',
     name: '裁判模型',
-    x: 1220,
+    x: 1500,
     y: 300,
     inputs: [{ id: 'in-jm-1', name: '输入' }],
     outputs: [{ id: 'out-jm-1', name: '输出' }],
@@ -243,7 +256,7 @@ const nodes = ref([
     id: 'end-1',
     type: 'end',
     name: '结束',
-    x: 1500,
+    x: 1780,
     y: 300,
     inputs: [{ id: 'in-1', name: '输入' }],
     outputs: [],
@@ -253,11 +266,12 @@ const nodes = ref([
 
 // 连线列表
 const connections = ref([
-  { id: 'conn-1', sourceId: 'start-1', sourcePort: 'out-1', targetId: 'textClean-1', targetPort: 'in-tc-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-2', sourceId: 'textClean-1', sourcePort: 'out-tc-1', targetId: 'envConnect-1', targetPort: 'in-env-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-3', sourceId: 'envConnect-1', sourcePort: 'out-env-1', targetId: 'apiAuto-1', targetPort: 'in-api-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-4', sourceId: 'apiAuto-1', sourcePort: 'out-api-1', targetId: 'judgeModel-1', targetPort: 'in-jm-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-5', sourceId: 'judgeModel-1', sourcePort: 'out-jm-1', targetId: 'end-1', targetPort: 'in-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-1', sourceId: 'start-1', sourcePort: 'out-1', targetId: 'tableExtract-1', targetPort: 'in-te-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-2', sourceId: 'tableExtract-1', sourcePort: 'out-te-1', targetId: 'textClean-1', targetPort: 'in-tc-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-3', sourceId: 'textClean-1', sourcePort: 'out-tc-1', targetId: 'envConnect-1', targetPort: 'in-env-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-4', sourceId: 'envConnect-1', sourcePort: 'out-env-1', targetId: 'apiAuto-1', targetPort: 'in-api-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-5', sourceId: 'apiAuto-1', sourcePort: 'out-api-1', targetId: 'judgeModel-1', targetPort: 'in-jm-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-6', sourceId: 'judgeModel-1', sourcePort: 'out-jm-1', targetId: 'end-1', targetPort: 'in-1', sourceParamIndex: 0, targetParamIndex: 0 },
 ])
 
 // 选中的节点
@@ -1317,6 +1331,25 @@ const removeOutputParam = (index) => {
   selectedNode.value.outputParams.splice(index, 1)
 }
 
+// 添加输出参数（用于表格提取节点）
+const addTableExtractOutputParam = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.outputParams) {
+    selectedNode.value.outputParams = []
+  }
+  const columnCount = selectedNode.value.outputParams.length + 1
+  selectedNode.value.outputParams.push({
+    name: `column${columnCount}`,
+    type: 'String',
+  })
+}
+
+// 删除输出参数（用于表格提取节点）
+const removeTableExtractOutputParam = (index) => {
+  if (!selectedNode.value || !selectedNode.value.outputParams) return
+  selectedNode.value.outputParams.splice(index, 1)
+}
+
 // 获取可用的变量列表（从开始节点的输入参数获取）
 const getAvailableVariables = () => {
   const startNode = nodes.value.find((n) => n.type === 'start')
@@ -1357,6 +1390,18 @@ const getNodeInputParams = (node) => {
       name: param.name || '',
       type: formatParamType(param),
     }))
+  }
+
+  // 表格提取节点：输入参数
+  if (node.type === 'tableExtract') {
+    return [
+      {
+        name: 'file',
+        type: 'File',
+        required: true,
+        description: '需要提取数据的表格文件',
+      },
+    ]
   }
 
   // 文本清洗节点：输入参数
@@ -1453,6 +1498,18 @@ const getNodeOutputParams = (node) => {
       return [{ name: '-', type: '-', isPlaceholder: true }]
     }
     return inputParams
+  }
+
+  // 表格提取节点：从 outputParams 配置读取（支持用户增减）
+  if (node.type === 'tableExtract') {
+    const outputParams = node.outputParams || []
+    if (outputParams.length === 0) {
+      return [{ name: '-', type: '-', isPlaceholder: true }]
+    }
+    return outputParams.map((param) => ({
+      name: param.name || '',
+      type: 'String',
+    }))
   }
 
   // 文本清洗节点：输出参数为 output_file
@@ -3166,6 +3223,103 @@ onUnmounted(() => {
                   <el-table-column label="类型" width="100" align="center">
                     <template #default="{ row }">
                       <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </template>
+
+          <!-- 表格提取节点配置 -->
+          <template v-if="selectedNode.type === 'tableExtract'">
+            <!-- 输入参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输入</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="[
+                    { name: 'file', type: 'File', required: true, desc: '需要提取数据的表格文件', field: 'inputFileValue' }
+                  ]"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="180">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span v-if="row.required" class="required-mark">*</span>
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="100" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="160">
+                    <template #default="{ row }">
+                      <!-- File 类型：只显示上传按钮和关联按钮 -->
+                      <div class="param-value-input file-input">
+                        <span v-if="selectedNode.config[row.field]" class="file-value">{{ selectedNode.config[row.field] }}</span>
+                        <span v-else class="file-placeholder">未选择文件</span>
+                        <div class="file-actions">
+                          <el-upload
+                            :show-file-list="false"
+                            accept=".xlsx,.xls,.csv"
+                            :before-upload="(file) => handleFileUpload(file, row.field)"
+                          >
+                            <el-icon class="action-icon upload-icon" title="上传文件"><Upload /></el-icon>
+                          </el-upload>
+                          <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
+                        </div>
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+
+            <!-- 输出参数（支持增减） -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输出（提取列名）</span>
+                <el-button type="primary" text size="small" :icon="Plus" @click="addTableExtractOutputParam" style="margin-left: auto;">
+                  添加列
+                </el-button>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="selectedNode.outputParams"
+                  size="small"
+                  class="io-table"
+                  empty-text="暂无输出列，请添加需要提取的列名"
+                >
+                  <el-table-column label="列名" min-width="160">
+                    <template #default="{ row }">
+                      <el-input v-model="row.name" placeholder="请输入列名" size="small" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="100" align="center">
+                    <template #default>
+                      <span class="param-type-tag">String</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="60" align="center">
+                    <template #default="{ $index }">
+                      <el-button
+                        type="danger"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeTableExtractOutputParam($index)"
+                      />
                     </template>
                   </el-table-column>
                 </el-table>
