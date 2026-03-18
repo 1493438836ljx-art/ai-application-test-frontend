@@ -28,11 +28,13 @@ const menuItems = [
     index: '4',
     title: '数据准备',
     icon: 'Collection',
-    children: [{ index: '4-1', title: '测评集管理', icon: 'FolderOpened', route: '/app/dataset' }],
+    children: [
+      { index: '4-1', title: '测评集管理', icon: 'FolderOpened', route: '/app/dataset' },
+      { index: '4-2', title: '插件管理', icon: 'Connection', route: '/app/plugin' },
+    ],
   },
   { index: '5', title: '环境管理', icon: 'Setting', route: '/app/environment' },
-  { index: '6', title: '插件管理', icon: 'Connection', route: '/app/plugin' },
-  { index: '7', title: '报告管理', icon: 'DataAnalysis', route: '/app/result' },
+  { index: '6', title: '报告管理', icon: 'DataAnalysis', route: '/app/result' },
 ]
 
 const iconComponents = {
