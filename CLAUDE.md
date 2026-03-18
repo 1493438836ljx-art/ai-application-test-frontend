@@ -57,7 +57,7 @@ src/
 - 路径别名：`@` 映射到 `./src`
 
 ## 开发规范
-- 每次开发完成功能之后，使用playwright MCP服务验证功能是否符合预期，playwright产生的图片存放在./tmp目录下。
+- 每次开发完成功能之后，使用playwright MCP服务验证功能是否符合预期，playwright产生的临时图片存放在./tmp目录下，在使用完playwright之后，清空./tmp目录。
 - 在自行执行 `npm run dev` 之前，先检查是否已经有进程在运行、是否 5173 端口已经被占用。如果是，则禁止自行执行 `npm run dev`，要访问服务，先重启当前运行的服务，然后直接访问 http://localhost:5173/
 
 ## 人员信息展示规范
