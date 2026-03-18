@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Folder,
@@ -8,7 +8,13 @@ import {
   VideoPlay,
   Document,
   ArrowLeft,
+  FolderOpened,
+  Cpu,
+  ArrowDown,
+  ArrowRight,
 } from '@element-plus/icons-vue'
+import DatasetManagement from '@/components/project/DatasetManagement.vue'
+import PluginManagement from '@/components/project/PluginManagement.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +41,21 @@ const menuItems = [
     title: '数据准备',
     icon: 'Coin',
     description: '测试数据集管理与准备',
+    expandable: true,
+    children: [
+      {
+        index: 'dataset',
+        title: '测评集管理',
+        icon: 'FolderOpened',
+        description: '管理测试数据集和字典',
+      },
+      {
+        index: 'plugin',
+        title: '插件管理',
+        icon: 'Cpu',
+        description: '管理测试插件和工具',
+      },
+    ],
   },
   {
     index: 'test',
@@ -56,6 +77,8 @@ const iconComponents = {
   Coin,
   VideoPlay,
   Document,
+  FolderOpened,
+  Cpu,
 }
 
 const iconColors = {
@@ -64,6 +87,8 @@ const iconColors = {
   Coin: '#f59e0b',
   VideoPlay: '#3b82f6',
   Document: '#ec4899',
+  FolderOpened: '#8b5cf6',
+  Cpu: '#06b6d4',
 }
 
 const getIcon = (iconName) => iconComponents[iconName]
@@ -72,9 +97,36 @@ const getIconColor = (iconName) => iconColors[iconName]
 // 当前选中的菜单
 const activeMenu = ref('project')
 
+// 展开的子菜单
+const expandedMenus = ref([])
+
 // 菜单点击处理
-const handleMenuSelect = (index) => {
-  activeMenu.value = index
+const handleMenuSelect = (index, hasChildren = false) => {
+  if (hasChildren) {
+    // 切换展开状态
+    const idx = expandedMenus.value.indexOf(index)
+    if (idx > -1) {
+      expandedMenus.value.splice(idx, 1)
+    } else {
+      expandedMenus.value.push(index)
+    }
+  } else {
+    activeMenu.value = index
+  }
+}
+
+// 子菜单点击处理
+const handleSubMenuSelect = (parentIndex, childIndex) => {
+  activeMenu.value = childIndex
+}
+
+// 检查菜单是否展开
+const isMenuExpanded = (index) => expandedMenus.value.includes(index)
+
+// 检查父菜单是否有激活的子菜单
+const hasActiveChild = (parentItem) => {
+  if (!parentItem.children) return false
+  return parentItem.children.some((child) => child.index === activeMenu.value)
 }
 
 // 返回上一页
@@ -101,27 +153,75 @@ const goBack = () => {
       </div>
 
       <nav class="space-menu">
-        <div
-          v-for="item in menuItems"
-          :key="item.index"
-          class="menu-item"
-          :class="{ active: activeMenu === item.index }"
-          @click="handleMenuSelect(item.index)"
-        >
-          <div class="menu-indicator"></div>
-          <div class="menu-icon-wrapper" :style="{ background: `${getIconColor(item.icon)}15` }">
-            <el-icon :size="20" :color="getIconColor(item.icon)">
-              <component :is="getIcon(item.icon)" />
-            </el-icon>
+        <div v-for="item in menuItems" :key="item.index">
+          <!-- 主菜单项 -->
+          <div
+            class="menu-item"
+            :class="{
+              active: activeMenu === item.index,
+              'has-children': item.expandable,
+              expanded: isMenuExpanded(item.index) || hasActiveChild(item),
+            }"
+            @click="handleMenuSelect(item.index, item.expandable)"
+          >
+            <div class="menu-indicator"></div>
+            <div class="menu-icon-wrapper" :style="{ background: `${getIconColor(item.icon)}15` }">
+              <el-icon :size="20" :color="getIconColor(item.icon)">
+                <component :is="getIcon(item.icon)" />
+              </el-icon>
+            </div>
+            <div class="menu-content">
+              <span class="menu-title">{{ item.title }}</span>
+              <span class="menu-desc">{{ item.description }}</span>
+            </div>
+            <div class="menu-arrow" v-if="item.expandable">
+              <el-icon :size="14">
+                <ArrowDown v-if="isMenuExpanded(item.index) || hasActiveChild(item)" />
+                <ArrowRight v-else />
+              </el-icon>
+            </div>
+            <div class="menu-arrow" v-else>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M6 4L10 8L6 12"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
           </div>
-          <div class="menu-content">
-            <span class="menu-title">{{ item.title }}</span>
-            <span class="menu-desc">{{ item.description }}</span>
-          </div>
-          <div class="menu-arrow">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M6 4L10 8L6 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+
+          <!-- 子菜单 -->
+          <div
+            v-if="item.expandable && item.children"
+            class="sub-menu"
+            :class="{
+              expanded: isMenuExpanded(item.index) || hasActiveChild(item),
+            }"
+          >
+            <div
+              v-for="child in item.children"
+              :key="child.index"
+              class="sub-menu-item"
+              :class="{ active: activeMenu === child.index }"
+              @click="handleSubMenuSelect(item.index, child.index)"
+            >
+              <div class="sub-menu-indicator"></div>
+              <div
+                class="sub-menu-icon-wrapper"
+                :style="{ background: `${getIconColor(child.icon)}15` }"
+              >
+                <el-icon :size="18" :color="getIconColor(child.icon)">
+                  <component :is="getIcon(child.icon)" />
+                </el-icon>
+              </div>
+              <div class="sub-menu-content">
+                <span class="sub-menu-title">{{ child.title }}</span>
+                <span class="sub-menu-desc">{{ child.description }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </nav>
@@ -173,9 +273,19 @@ const goBack = () => {
         <div class="panel-body">
           <div class="placeholder-content">
             <el-icon :size="48" color="#c0c4cc"><Coin /></el-icon>
-            <p>数据准备功能开发中...</p>
+            <p>请在左侧选择具体的子菜单：测评集管理或插件管理</p>
           </div>
         </div>
+      </div>
+
+      <!-- 测评集管理 -->
+      <div v-if="activeMenu === 'dataset'" class="content-panel">
+        <DatasetManagement />
+      </div>
+
+      <!-- 插件管理 -->
+      <div v-if="activeMenu === 'plugin'" class="content-panel">
+        <PluginManagement />
       </div>
 
       <!-- 测试执行 -->
@@ -373,6 +483,97 @@ const goBack = () => {
   transform: translateX(2px);
 }
 
+/* 子菜单样式 */
+.sub-menu {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.sub-menu.expanded {
+  max-height: 200px;
+}
+
+.sub-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 28px;
+  margin-left: 20px;
+  border-left: 2px solid #e5e7eb;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  margin-top: 4px;
+}
+
+.sub-menu-item:first-child {
+  margin-top: 8px;
+}
+
+.sub-menu-item:hover {
+  background: #f3f4f6;
+  border-left-color: #6366f1;
+}
+
+.sub-menu-item.active {
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  border-left-color: #6366f1;
+}
+
+.sub-menu-item.active .sub-menu-indicator {
+  width: 6px;
+  height: 6px;
+  background: #6366f1;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.sub-menu-indicator {
+  width: 6px;
+  height: 6px;
+  background: #d1d5db;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.sub-menu-icon-wrapper {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sub-menu-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sub-menu-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.sub-menu-item.active .sub-menu-title {
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.sub-menu-desc {
+  font-size: 11px;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 底部状态 */
 .sidebar-footer {
   padding: 16px 20px;
@@ -422,6 +623,7 @@ const goBack = () => {
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
   min-height: calc(100vh - 48px);
+  overflow: hidden;
 }
 
 .panel-header {
