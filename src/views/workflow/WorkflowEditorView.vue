@@ -761,7 +761,7 @@ const newNodeName = ref('')
 
 // 调试状态
 const debugState = reactive({
-  isDebugging: false,
+  showDialog: false, // 控制弹窗显示
   currentNode: null,
   logs: [],
 })
@@ -866,7 +866,7 @@ const handleAiChatKeydown = (e) => {
 const debugNode = () => {
   if (!selectedNode.value) return
 
-  debugState.isDebugging = true
+  debugState.showDialog = true
   debugState.currentNode = selectedNode.value
   debugState.logs = []
 
@@ -911,7 +911,7 @@ const addDebugLog = (type, message) => {
 
 // 停止调试
 const stopDebug = () => {
-  debugState.isDebugging = false
+  debugState.showDialog = false
   debugState.currentNode = null
 }
 
@@ -2671,45 +2671,43 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 调试日志面板 -->
-        <div v-if="debugState.isDebugging" class="debug-panel">
-          <div class="debug-header">
-            <div class="debug-title">
-              <el-icon :size="16" color="#6366f1"><Tools /></el-icon>
-              <span>调试日志</span>
-              <span v-if="debugState.currentNode" class="debug-node-name">
-                - {{ debugState.currentNode.name }}
-              </span>
+        <!-- 调试日志弹窗 -->
+        <el-dialog
+          v-model="debugState.showDialog"
+          :title="`调试日志 - ${debugState.currentNode?.name || ''}`"
+          width="600px"
+          :close-on-click-modal="false"
+          class="debug-dialog"
+        >
+          <div class="debug-dialog-content">
+            <div class="debug-dialog-header">
+              <el-button size="small" @click="clearDebugLogs">清除日志</el-button>
             </div>
-            <div class="debug-actions">
-              <el-button text size="small" @click="clearDebugLogs">清除日志</el-button>
-              <el-button text size="small" @click="stopDebug">
-                <el-icon><Close /></el-icon>
-                关闭
-              </el-button>
-            </div>
-          </div>
-          <div class="debug-logs">
-            <div
-              v-for="log in debugState.logs"
-              :key="log.id"
-              class="debug-log-item"
-              :class="log.type"
-            >
-              <span class="log-time">{{ log.timestamp }}</span>
-              <span class="log-type">
-                <template v-if="log.type === 'info'">[INFO]</template>
-                <template v-else-if="log.type === 'success'">[SUCCESS]</template>
-                <template v-else-if="log.type === 'warning'">[WARNING]</template>
-                <template v-else-if="log.type === 'error'">[ERROR]</template>
-              </span>
-              <span class="log-message">{{ log.message }}</span>
-            </div>
-            <div v-if="debugState.logs.length === 0" class="debug-empty">
-              暂无调试日志
+            <div class="debug-dialog-logs">
+              <div
+                v-for="log in debugState.logs"
+                :key="log.id"
+                class="debug-log-item"
+                :class="log.type"
+              >
+                <span class="log-time">{{ log.timestamp }}</span>
+                <span class="log-type">
+                  <template v-if="log.type === 'info'">[INFO]</template>
+                  <template v-else-if="log.type === 'success'">[SUCCESS]</template>
+                  <template v-else-if="log.type === 'warning'">[WARNING]</template>
+                  <template v-else-if="log.type === 'error'">[ERROR]</template>
+                </span>
+                <span class="log-message">{{ log.message }}</span>
+              </div>
+              <div v-if="debugState.logs.length === 0" class="debug-empty">
+                暂无调试日志
+              </div>
             </div>
           </div>
-        </div>
+          <template #footer>
+            <el-button @click="stopDebug">关闭</el-button>
+          </template>
+        </el-dialog>
 
         <!-- 运行日志面板 -->
         <div v-if="runState.isRunning" class="debug-panel run-panel">
@@ -4405,6 +4403,99 @@ onUnmounted(() => {
 }
 
 .debug-logs::-webkit-scrollbar-thumb:hover {
+  background: #585b70;
+}
+
+/* 调试弹窗样式 */
+.debug-dialog-content {
+  display: flex;
+  flex-direction: column;
+  height: 400px;
+}
+
+.debug-dialog-header {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 12px;
+}
+
+.debug-dialog-logs {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: #1e1e2e;
+  border-radius: 8px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.debug-dialog-logs .debug-log-item {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(69, 71, 90, 0.3);
+}
+
+.debug-dialog-logs .debug-log-item:last-child {
+  border-bottom: none;
+}
+
+.debug-dialog-logs .debug-log-item.info .log-type {
+  color: #89b4fa;
+}
+
+.debug-dialog-logs .debug-log-item.success .log-type {
+  color: #a6e3a1;
+}
+
+.debug-dialog-logs .debug-log-item.warning .log-type {
+  color: #f9e2af;
+}
+
+.debug-dialog-logs .debug-log-item.error .log-type {
+  color: #f38ba8;
+}
+
+.debug-dialog-logs .log-time {
+  color: #6c7086;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.debug-dialog-logs .log-type {
+  flex-shrink: 0;
+  width: 80px;
+}
+
+.debug-dialog-logs .log-message {
+  color: #bac2de;
+  word-break: break-all;
+}
+
+.debug-dialog-logs .debug-empty {
+  color: #6c7086;
+  text-align: center;
+  padding: 40px;
+  font-style: italic;
+}
+
+.debug-dialog-logs::-webkit-scrollbar {
+  width: 6px;
+}
+
+.debug-dialog-logs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.debug-dialog-logs::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 3px;
+}
+
+.debug-dialog-logs::-webkit-scrollbar-thumb:hover {
   background: #585b70;
 }
 
