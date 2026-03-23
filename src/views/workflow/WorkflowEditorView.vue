@@ -72,6 +72,7 @@ const nodeCategories = [
   { key: 'TEST_DESIGN', name: '测试设计' },
   { key: 'TEST_EXEC', name: '测试执行' },
   { key: 'EVALUATE', name: '结果评估' },
+  { key: 'OUTPUT', name: '结果输出' },
   { key: 'REPORT', name: '报告生成' },
 ]
 
@@ -89,6 +90,8 @@ const nodeTypes = ref([
   { type: 'apiAuto', name: 'HTTPS/HTTP接口调用', icon: 'Connection', color: '#3b82f6', category: 'TEST_EXEC' },
   // 结果评估
   { type: 'judgeModel', name: '裁判模型', icon: 'DataAnalysis', color: '#ec4899', category: 'EVALUATE' },
+  // 表格生成
+  { type: 'tableGenerate', name: '表格生成', icon: 'Grid', color: '#22c55e', category: 'OUTPUT' },
 ])
 
 // 加载节点类型数据
@@ -101,6 +104,10 @@ const loadNodeTypes = async () => {
         { type: 'start', name: '开始', icon: 'VideoPlay', color: '#10b981', category: 'BASIC' },
         { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'BASIC' },
         { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC' },
+      ]
+      // 前端固定节点类型（即使后端没有返回也会显示）
+      const fixedNodeTypes = [
+        { type: 'tableGenerate', name: '表格生成', icon: 'Grid', color: '#22c55e', category: 'OUTPUT' },
       ]
       // 默认图标映射（用于后端未返回icon的情况）
       const defaultIconMap = {
@@ -122,6 +129,7 @@ const loadNodeTypes = async () => {
         apiAuto: 'Connection',
         aiAuto: 'Cpu',
         judgeModel: 'DataAnalysis',
+        tableGenerate: 'Grid',
         firstTokenLatency: 'Timer',
         tokenOutputTime: 'Stopwatch',
         e2eLatency: 'Clock',
@@ -148,6 +156,7 @@ const loadNodeTypes = async () => {
         apiAuto: '#3b82f6',
         aiAuto: '#f97316',
         judgeModel: '#ec4899',
+        tableGenerate: '#22c55e',
         firstTokenLatency: '#f59e0b',
         tokenOutputTime: '#84cc16',
         e2eLatency: '#06b6d4',
@@ -163,7 +172,10 @@ const loadNodeTypes = async () => {
         category: item.category,
         description: item.description,
       }))
-      nodeTypes.value = [...basicNodeTypes, ...apiNodeTypes]
+      // 合并节点类型：基础节点 + API节点 + 固定节点（去重）
+      const apiTypeSet = new Set(apiNodeTypes.map(n => n.type))
+      const filteredFixedTypes = fixedNodeTypes.filter(n => !apiTypeSet.has(n.type))
+      nodeTypes.value = [...basicNodeTypes, ...apiNodeTypes, ...filteredFixedTypes]
     }
   } catch (error) {
     console.error('加载节点类型失败:', error)
@@ -174,6 +186,7 @@ const loadNodeTypes = async () => {
 // 节点功能描述映射
 const nodeDescriptions = {
   textClean: '对文本数据进行清洗、过滤和标准化处理',
+  tableGenerate: '根据输入数据生成Excel表格文件',
 }
 
 // 使用变量类型 Store
@@ -182,7 +195,10 @@ const variableTypeStore = useVariableTypeStore()
 // 变量类型级联选择器数据（从后端动态获取）
 const typeOptions = computed(() => variableTypeStore.typeOptions)
 
-// 将参数的 type 和 elementType/fileType 转换为级联选择器的值
+// 基本类型选项（不含 Array 和 File，用于循环节点输出变量）
+const basicTypeOptions = computed(() => variableTypeStore.basicTypeOptions)
+
+// 将参数的 type 和 elementType/fileType/dictionaryType 转换为级联选择器的值
 const getTypeValue = (param) => {
   if (!param.type) return ['String']
   if (param.type === 'Array') {
@@ -190,6 +206,9 @@ const getTypeValue = (param) => {
   }
   if (param.type === 'File') {
     return ['File', param.fileType || 'Txt']
+  }
+  if (param.type === 'Dictionary') {
+    return ['Dictionary', param.dictionaryType || '公文写作数据字典']
   }
   return [param.type]
 }
@@ -200,19 +219,29 @@ const handleTypeChange = (value, row) => {
     row.type = 'String'
     row.elementType = undefined
     row.fileType = undefined
+    row.dictionaryType = undefined
     return
   }
   if (value[0] === 'Array') {
     row.type = 'Array'
     row.elementType = value[1] || 'String'
     row.fileType = undefined
+    row.dictionaryType = undefined
   } else if (value[0] === 'File') {
     row.type = 'File'
     row.fileType = value[1] || 'Txt'
     row.elementType = undefined
+    row.dictionaryType = undefined
+  } else if (value[0] === 'Dictionary') {
+    row.type = 'Dictionary'
+    row.dictionaryType = value[1] || '公文写作数据字典'
+    row.elementType = undefined
+    row.fileType = undefined
   } else {
     row.type = value[0]
     row.elementType = undefined
+    row.fileType = undefined
+    row.dictionaryType = undefined
   }
 }
 
@@ -289,13 +318,32 @@ const nodes = ref([
     y: 300,
     inputs: [{ id: 'in-jm-1', name: '输入' }],
     outputs: [{ id: 'out-jm-1', name: '输出' }],
-    config: {},
+    config: {
+      modelValue: 'DeepSeekR1-32B',
+      promptValue: '',
+      toEvaluateType: 'String',
+      toEvaluateValue: '',
+      refType: 'String',
+      refValue: '',
+    },
+  },
+  {
+    id: 'tableGenerate-1',
+    type: 'tableGenerate',
+    name: '表格生成',
+    x: 1780,
+    y: 300,
+    inputs: [{ id: 'in-tg-1', name: '输入' }],
+    outputs: [{ id: 'out-tg-1', name: '输出' }],
+    config: {
+      inputParams: [],
+    },
   },
   {
     id: 'end-1',
     type: 'end',
     name: '结束',
-    x: 1780,
+    x: 2060,
     y: 300,
     inputs: [{ id: 'in-1', name: '输入' }],
     outputs: [],
@@ -310,7 +358,8 @@ const connections = ref([
   { id: 'conn-3', sourceId: 'textClean-1', sourcePort: 'out-tc-1', targetId: 'envConnect-1', targetPort: 'in-env-1', sourceParamIndex: 0, targetParamIndex: 0 },
   { id: 'conn-4', sourceId: 'envConnect-1', sourcePort: 'out-env-1', targetId: 'apiAuto-1', targetPort: 'in-api-1', sourceParamIndex: 0, targetParamIndex: 0 },
   { id: 'conn-5', sourceId: 'apiAuto-1', sourcePort: 'out-api-1', targetId: 'judgeModel-1', targetPort: 'in-jm-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-6', sourceId: 'judgeModel-1', sourcePort: 'out-jm-1', targetId: 'end-1', targetPort: 'in-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-6', sourceId: 'judgeModel-1', sourcePort: 'out-jm-1', targetId: 'tableGenerate-1', targetPort: 'in-tg-1', sourceParamIndex: 0, targetParamIndex: 0 },
+  { id: 'conn-7', sourceId: 'tableGenerate-1', sourcePort: 'out-tg-1', targetId: 'end-1', targetPort: 'in-1', sourceParamIndex: 0, targetParamIndex: 0 },
 ])
 
 // 关联线（循环节点与循环体画布之间的虚线关联）
@@ -994,6 +1043,25 @@ const addNode = (type) => {
     createAssociation(newNode.id, loopBodyCanvas.id)
   }
 
+  // 裁判模型节点特殊处理
+  if (type === 'judgeModel') {
+    newNode.config = {
+      modelValue: 'DeepSeekR1-32B',
+      promptValue: '',
+      toEvaluateType: 'String',
+      toEvaluateValue: '',
+      refType: 'String',
+      refValue: '',
+    }
+  }
+
+  // 表格生成节点特殊处理
+  if (type === 'tableGenerate') {
+    newNode.config = {
+      inputParams: [],
+    }
+  }
+
   nodes.value.push(newNode)
   selectedNode.value = newNode
 }
@@ -1578,6 +1646,10 @@ const selectNode = (node, event) => {
   if (node.type === 'textClean') {
     initTextCleanConfig()
   }
+  // 初始化循环节点配置
+  if (node.type === 'loop') {
+    initLoopConfig()
+  }
 }
 
 // 选中连线
@@ -1643,23 +1715,135 @@ const removeOutputParam = (index) => {
   selectedNode.value.outputParams.splice(index, 1)
 }
 
-// 添加输出参数（用于表格提取节点）
-const addTableExtractOutputParam = () => {
+// 添加循环节点输出参数
+const addLoopOutputParam = () => {
   if (!selectedNode.value) return
-  if (!selectedNode.value.outputParams) {
-    selectedNode.value.outputParams = []
+  if (!selectedNode.value.config.loopOutputParams) {
+    selectedNode.value.config.loopOutputParams = []
   }
-  const columnCount = selectedNode.value.outputParams.length + 1
-  selectedNode.value.outputParams.push({
-    name: `column${columnCount}`,
-    type: 'String',
+  selectedNode.value.config.loopOutputParams.push({
+    id: `loop-out-${Date.now()}`,
+    name: '',
+    elementType: '', // 类型由关联的变量自动推断
+    value: '',
   })
 }
 
-// 删除输出参数（用于表格提取节点）
-const removeTableExtractOutputParam = (index) => {
-  if (!selectedNode.value || !selectedNode.value.outputParams) return
-  selectedNode.value.outputParams.splice(index, 1)
+// 删除循环节点输出参数
+const removeLoopOutputParam = (index) => {
+  if (!selectedNode.value || !selectedNode.value.config.loopOutputParams) return
+  selectedNode.value.config.loopOutputParams.splice(index, 1)
+}
+
+// 格式化循环节点输出变量类型显示（Array<elementType>）
+const formatLoopOutputType = (elementType) => {
+  return `Array<${elementType || 'String'}>`
+}
+
+// 循环节点输出变量选择器索引
+const loopOutputVariableIndex = ref(null)
+
+// 循环节点输出变量选择器专用对话框
+const showLoopOutputSelectorDialog = ref(false)
+const loopOutputSelectorList = ref([])
+
+// 获取循环节点输出变量可关联的变量列表（包含循环体、前置节点、开始节点）
+const getLoopBodyNodeOutputs = () => {
+  if (!selectedNode.value || selectedNode.value.type !== 'loop') return []
+
+  const outputs = []
+  const addedVariables = new Set() // 用于去重
+
+  // 辅助函数：添加变量（带去重）
+  const addVariable = (item) => {
+    const key = `${item.nodeName}.${item.param}`
+    if (!addedVariables.has(key)) {
+      addedVariables.add(key)
+      outputs.push(item)
+    }
+  }
+
+  // 1. 获取开始节点的初始变量
+  const startNode = nodes.value.find((n) => n.type === 'start')
+  if (startNode && startNode.outputParams) {
+    startNode.outputParams.forEach((param) => {
+      // 过滤掉数组类型的变量
+      if (param.type === 'Array' || (param.type && param.type.startsWith('Array'))) return
+      addVariable({
+        nodeId: startNode.id,
+        nodeName: startNode.name,
+        param: param.name,
+        type: param.type || 'String',
+        variable: `\${${startNode.name}.${param.name}}`,
+        source: 'start', // 标记来源：开始节点
+      })
+    })
+  }
+
+  // 2. 获取前置节点的输出变量
+  const visitedNodes = new Set()
+  const findUpstreamNodes = (nodeId) => {
+    if (visitedNodes.has(nodeId)) return
+    visitedNodes.add(nodeId)
+
+    const incomingConns = connections.value.filter((c) => c.targetId === nodeId)
+    incomingConns.forEach((conn) => {
+      const sourceNode = nodes.value.find((n) => n.id === conn.sourceId)
+      if (sourceNode && !visitedNodes.has(sourceNode.id) && sourceNode.type !== 'start') {
+        const nodeOutputs = getNodeOutputParams(sourceNode)
+        nodeOutputs.forEach((param) => {
+          // 过滤掉数组类型的变量
+          if (param.type && param.type.startsWith('Array')) return
+          if (param.isPlaceholder) return
+          addVariable({
+            nodeId: sourceNode.id,
+            nodeName: sourceNode.name,
+            param: param.name,
+            type: param.type,
+            variable: `\${${sourceNode.name}.${param.name}}`,
+            source: 'upstream', // 标记来源：前置节点
+          })
+        })
+        findUpstreamNodes(sourceNode.id)
+      }
+    })
+  }
+  findUpstreamNodes(selectedNode.value.id)
+
+  // 3. 获取循环体中节点的输出变量
+  const loopBodyCanvasNode = nodes.value.find(
+    (n) => n.type === 'loopBodyCanvas' && n.belongsTo === selectedNode.value.id
+  )
+
+  if (loopBodyCanvasNode && loopBodyCanvasNode.loopBody && loopBodyCanvasNode.loopBody.nodes) {
+    const loopBodyNodes = loopBodyCanvasNode.loopBody.nodes
+    loopBodyNodes.forEach((node) => {
+      const nodeOutputs = getNodeOutputParams(node)
+      nodeOutputs.forEach((param) => {
+        // 过滤掉数组类型的变量
+        if (param.type && param.type.startsWith('Array')) return
+        if (param.isPlaceholder) return
+        addVariable({
+          nodeId: node.id,
+          nodeName: node.name,
+          param: param.name,
+          type: param.type,
+          variable: `\${${node.name}.${param.name}}`,
+          source: 'loopBody', // 标记来源：循环体
+        })
+      })
+    })
+  }
+
+  return outputs
+}
+
+// 显示循环节点输出变量的变量选择器
+const showLoopOutputVariableSelector = (index) => {
+  loopOutputVariableIndex.value = index
+  // 获取循环体节点输出变量列表
+  loopOutputSelectorList.value = getLoopBodyNodeOutputs()
+  showLoopOutputSelectorDialog.value = true
 }
 
 // 获取可用的变量列表（从开始节点的输入参数获取）
@@ -1845,6 +2029,9 @@ const datasetList = ref([
 const variableSelectorField = ref(null)
 const showVariableSelectorDialog = ref(false)
 
+// 裁判模型节点变量选择器相关
+const judgeModelTypeField = ref(null) // 记录当前选择的类型字段
+
 // 处理文件上传
 const handleFileUpload = (file, field) => {
   if (!selectedNode.value) return false
@@ -1865,6 +2052,75 @@ const handleFileUpload = (file, field) => {
 // 显示变量选择器
 const showVariableSelector = (field) => {
   variableSelectorField.value = field
+  showVariableSelectorDialog.value = true
+}
+
+// 显示裁判模型节点的变量选择器
+const showJudgeModelVariableSelector = (field, typeField = null) => {
+  variableSelectorField.value = field
+  judgeModelTypeField.value = typeField
+  showVariableSelectorDialog.value = true
+}
+
+// 处理裁判模型节点类型变化
+const handleJudgeModelTypeChange = (typeField, value) => {
+  if (!selectedNode.value) return
+  selectedNode.value.config[typeField] = value
+}
+
+// 表格生成节点相关函数
+const tableGenerateVariableIndex = ref(null)
+
+// 添加表格生成节点输入参数
+const addTableGenerateInputParam = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.config.inputParams) {
+    selectedNode.value.config.inputParams = []
+  }
+  selectedNode.value.config.inputParams.push({
+    name: '',
+    type: 'String',
+    value: '',
+  })
+}
+
+// 删除表格生成节点输入参数
+const removeTableGenerateInputParam = (index) => {
+  if (!selectedNode.value || !selectedNode.value.config.inputParams) return
+  selectedNode.value.config.inputParams.splice(index, 1)
+}
+
+// 获取表格生成节点参数类型显示值
+const getTableGenerateTypeValue = (param) => {
+  if (!param.type) return 'String'
+  if (param.type === 'Array') return 'Array<String>'
+  if (param.type === 'Dictionary') return 'Dictionary'
+  return param.type
+}
+
+// 处理表格生成节点类型变化
+const handleTableGenerateTypeChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.config.inputParams) return
+  const param = selectedNode.value.config.inputParams[index]
+  if (!param) return
+
+  if (value === 'Array<String>') {
+    param.type = 'Array'
+    param.elementType = 'String'
+  } else if (value === 'Dictionary') {
+    param.type = 'Dictionary'
+    param.dictionaryType = '公文写作数据字典'
+  } else {
+    param.type = value
+    delete param.elementType
+    delete param.dictionaryType
+  }
+}
+
+// 显示表格生成节点变量选择器
+const showTableGenerateVariableSelector = (index) => {
+  variableSelectorField.value = `tableGenerateInputParam_${index}`
+  tableGenerateVariableIndex.value = index
   showVariableSelectorDialog.value = true
 }
 
@@ -1906,12 +2162,86 @@ const getUpstreamNodeOutputs = () => {
   return outputs
 }
 
+// 选择循环输出变量（自动推断类型）
+const selectLoopOutputVariable = (item) => {
+  if (!selectedNode.value) return
+  const index = loopOutputVariableIndex.value
+  if (index !== null && selectedNode.value.config.loopOutputParams && selectedNode.value.config.loopOutputParams[index]) {
+    // 设置变量值
+    selectedNode.value.config.loopOutputParams[index].value = item.variable
+    // 根据关联变量的类型自动推断输出类型（Array<elementType>）
+    // item.type 是循环体节点输出的类型，如 String, Number 等
+    selectedNode.value.config.loopOutputParams[index].elementType = item.type || 'String'
+  }
+  showLoopOutputSelectorDialog.value = false
+  loopOutputVariableIndex.value = null
+}
+
 // 选择变量
 const selectVariable = (variable) => {
   if (!selectedNode.value || !variableSelectorField.value) return
-  selectedNode.value.config[variableSelectorField.value] = variable
+
+  // 处理循环节点输出变量的选择
+  if (variableSelectorField.value.startsWith('loopOutputParam_')) {
+    const index = loopOutputVariableIndex.value
+    if (index !== null && selectedNode.value.config.loopOutputParams && selectedNode.value.config.loopOutputParams[index]) {
+      selectedNode.value.config.loopOutputParams[index].value = variable
+    }
+  } else {
+    selectedNode.value.config[variableSelectorField.value] = variable
+  }
+
+  // 处理裁判模型节点的类型自动调整
+  if (selectedNode.value.type === 'judgeModel' && judgeModelTypeField.value) {
+    // 从变量表达式中解析出节点名和参数名，获取变量类型
+    const upstreamOutputs = getUpstreamNodeOutputs()
+    const selectedOutput = upstreamOutputs.find((item) => item.variable === variable)
+    if (selectedOutput) {
+      // 根据选择的变量类型映射到裁判模型支持的类型
+      let mappedType = 'String'
+      const varType = selectedOutput.type || ''
+      if (varType.includes('File') || varType.includes('Excel')) {
+        mappedType = 'File(Excel)'
+      } else if (varType.includes('Array') || varType.includes('[')) {
+        mappedType = 'Array<String>'
+      } else {
+        mappedType = 'String'
+      }
+      selectedNode.value.config[judgeModelTypeField.value] = mappedType
+    }
+  }
+
+  // 处理表格生成节点的变量选择和类型自动调整
+  if (selectedNode.value.type === 'tableGenerate' && variableSelectorField.value.startsWith('tableGenerateInputParam_')) {
+    const index = tableGenerateVariableIndex.value
+    if (index !== null && selectedNode.value.config.inputParams && selectedNode.value.config.inputParams[index]) {
+      selectedNode.value.config.inputParams[index].value = variable
+      // 根据选择的变量类型自动调整参数类型
+      const upstreamOutputs = getUpstreamNodeOutputs()
+      const selectedOutput = upstreamOutputs.find((item) => item.variable === variable)
+      if (selectedOutput) {
+        const varType = selectedOutput.type || ''
+        const param = selectedNode.value.config.inputParams[index]
+        if (varType.includes('Array') || varType.includes('[')) {
+          param.type = 'Array'
+          param.elementType = 'String'
+        } else if (varType.includes('Dictionary') || varType.includes('数据字典')) {
+          param.type = 'Dictionary'
+          param.dictionaryType = '公文写作数据字典'
+        } else {
+          param.type = 'String'
+          delete param.elementType
+          delete param.dictionaryType
+        }
+      }
+    }
+  }
+
   showVariableSelectorDialog.value = false
   variableSelectorField.value = null
+  loopOutputVariableIndex.value = null
+  judgeModelTypeField.value = null
+  tableGenerateVariableIndex.value = null
 }
 
 // 初始化文本清洗节点配置
@@ -1929,6 +2259,14 @@ const initTextCleanConfig = () => {
     selectedNode.value.config.normalizeNewlines = true
     selectedNode.value.config.trimWhitespace = true
     // 输出格式根据输入类型自动确定，无需手动配置
+  }
+}
+
+// 初始化循环节点配置
+const initLoopConfig = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.config.loopOutputParams) {
+    selectedNode.value.config.loopOutputParams = []
   }
 }
 
@@ -2741,17 +3079,44 @@ onMounted(async () => {
         inputs: [{ id: 'in-1', name: '输入' }],
         outputs: [{ id: 'out-1', name: '输出' }],
         outputParams: [
-          { name: 'score', type: 'Number', elementType: 'number' },
-          { name: 'reason', type: 'String', elementType: 'string' }
+          { name: 'output', type: 'Array', elementType: 'Object' }
         ],
-        inputParams: [{ name: 'input', type: 'Any', elementType: 'any' }],
-        config: {}
+        inputParams: [
+          { name: 'model', type: 'String' },
+          { name: 'prompt', type: 'String' },
+          { name: 'to_evaluate', type: 'String' },
+          { name: 'ref', type: 'String' }
+        ],
+        config: {
+          modelValue: 'DeepSeekR1-32B',
+          promptValue: '',
+          toEvaluateType: 'String',
+          toEvaluateValue: '',
+          refType: 'String',
+          refValue: '',
+        }
+      },
+      {
+        id: 'tableGenerate-1',
+        type: 'tableGenerate',
+        name: '表格生成',
+        x: 1150,
+        y: 250,
+        inputs: [{ id: 'in-1', name: '输入' }],
+        outputs: [{ id: 'out-1', name: '输出' }],
+        outputParams: [
+          { name: 'output_excel', type: 'File', fileType: 'Excel' }
+        ],
+        inputParams: [],
+        config: {
+          inputParams: []
+        }
       },
       {
         id: 'end-1',
         type: 'end',
         name: '结束',
-        x: 1150,
+        x: 1400,
         y: 250,
         inputs: [{ id: 'in-1', name: '输入' }],
         outputs: [],
@@ -2790,6 +3155,14 @@ onMounted(async () => {
       {
         id: `conn-${Date.now() + 3}`,
         sourceId: 'judgeModel-1',
+        sourcePort: 'out-1',
+        targetId: 'tableGenerate-1',
+        targetPort: 'in-1',
+        config: {}
+      },
+      {
+        id: `conn-${Date.now() + 4}`,
+        sourceId: 'tableGenerate-1',
         sourcePort: 'out-1',
         targetId: 'end-1',
         targetPort: 'in-1',
@@ -3757,35 +4130,51 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 输出参数 -->
+            <!-- 输出参数（可增减，类型显示为 Array<元素类型>） -->
             <div class="io-section">
               <div class="io-section-header">
                 <el-icon class="expand-icon"><ArrowDown /></el-icon>
                 <span class="io-section-title">输出</span>
+                <el-button type="primary" text size="small" :icon="Plus" @click="addLoopOutputParam" style="margin-left: auto;">
+                  添加变量
+                </el-button>
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="[
-                    { name: 'current_item', type: 'Any', desc: '当前循环项' },
-                    { name: 'current_index', type: 'Number', desc: '当前循环索引' },
-                    { name: 'result', type: 'Any', desc: '循环结果' }
-                  ]"
+                  :data="selectedNode.config.loopOutputParams"
                   size="small"
                   class="io-table"
+                  empty-text="暂无输出变量，请添加"
                 >
-                  <el-table-column label="变量名" min-width="140">
+                  <el-table-column label="变量名" min-width="120">
                     <template #default="{ row }">
-                      <div class="param-name-cell">
-                        <span class="param-name-text">{{ row.name }}</span>
-                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
-                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
-                        </el-tooltip>
+                      <el-input v-model="row.name" placeholder="请输入变量名" size="small" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" min-width="150" align="center">
+                    <template #default="{ row }">
+                      <span v-if="row.elementType" class="param-type-tag">Array<{{ row.elementType }}></span>
+                      <span v-else class="param-type-placeholder">关联后自动推断</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="140">
+                    <template #default="{ row, $index }">
+                      <div class="param-value-input">
+                        <span v-if="row.value" class="param-value-text">{{ row.value }}</span>
+                        <span v-else class="param-value-placeholder">点击关联</span>
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showLoopOutputVariableSelector($index)"><Link /></el-icon>
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" width="100" align="center">
-                    <template #default="{ row }">
-                      <span class="param-type-tag">{{ row.type }}</span>
+                  <el-table-column label="操作" width="60" align="center">
+                    <template #default="{ $index }">
+                      <el-button
+                        type="danger"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeLoopOutputParam($index)"
+                      />
                     </template>
                   </el-table-column>
                 </el-table>
@@ -4125,41 +4514,31 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 输出参数（支持增减） -->
+            <!-- 输出参数 -->
             <div class="io-section">
               <div class="io-section-header">
                 <el-icon class="expand-icon"><ArrowDown /></el-icon>
-                <span class="io-section-title">输出（提取列名）</span>
-                <el-button type="primary" text size="small" :icon="Plus" @click="addTableExtractOutputParam" style="margin-left: auto;">
-                  添加列
-                </el-button>
+                <span class="io-section-title">输出</span>
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="selectedNode.outputParams"
+                  :data="[{ name: 'output', type: 'Array<Object>', desc: '从表格中提取的数据数组' }]"
                   size="small"
                   class="io-table"
-                  empty-text="暂无输出列，请添加需要提取的列名"
                 >
-                  <el-table-column label="列名" min-width="160">
+                  <el-table-column label="变量名" min-width="160">
                     <template #default="{ row }">
-                      <el-input v-model="row.name" placeholder="请输入列名" size="small" />
+                      <div class="param-name-cell">
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" width="100" align="center">
-                    <template #default>
-                      <span class="param-type-tag">String</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="60" align="center">
-                    <template #default="{ $index }">
-                      <el-button
-                        type="danger"
-                        text
-                        size="small"
-                        :icon="Delete"
-                        @click="removeTableExtractOutputParam($index)"
-                      />
+                  <el-table-column label="类型" width="120" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type }}</span>
                     </template>
                   </el-table-column>
                 </el-table>
@@ -4269,6 +4648,228 @@ onUnmounted(() => {
             </div>
           </template>
 
+          <!-- 裁判模型节点配置 -->
+          <template v-if="selectedNode.type === 'judgeModel'">
+            <!-- 输入参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输入</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="[
+                    { name: 'model', type: 'String', required: true, desc: '所使用的底座大模型', field: 'modelValue' },
+                    { name: 'prompt', type: 'String', required: true, desc: '裁判模型的评估规则', field: 'promptValue' },
+                    { name: 'to_evaluate', type: selectedNode.config.toEvaluateType || 'String', required: true, desc: '待评估的内容', field: 'toEvaluateValue', isTypeSelectable: true, typeField: 'toEvaluateType' },
+                    { name: 'ref', type: selectedNode.config.refType || 'String', required: false, desc: '参考内容（可选）', field: 'refValue', isTypeSelectable: true, typeField: 'refType' }
+                  ]"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="140">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span v-if="row.required" class="required-mark">*</span>
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" min-width="130" align="center">
+                    <template #default="{ row }">
+                      <!-- model: 固定显示 String -->
+                      <span v-if="row.name === 'model'" class="param-type-tag">{{ row.type }}</span>
+                      <!-- prompt: 固定显示 String -->
+                      <span v-else-if="row.name === 'prompt'" class="param-type-tag">{{ row.type }}</span>
+                      <!-- to_evaluate/ref: 类型可选择 -->
+                      <el-select
+                        v-else
+                        :model-value="selectedNode.config[row.typeField] || 'String'"
+                        placeholder="选择类型"
+                        size="small"
+                        style="width: 100%"
+                        @update:model-value="(val) => handleJudgeModelTypeChange(row.typeField, val)"
+                      >
+                        <el-option label="String" value="String" />
+                        <el-option label="File(Excel)" value="File(Excel)" />
+                        <el-option label="Array<String>" value="Array<String>" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="200">
+                    <template #default="{ row }">
+                      <!-- model: 下拉选择 -->
+                      <div v-if="row.name === 'model'" class="param-value-input">
+                        <el-select
+                          v-model="selectedNode.config[row.field]"
+                          placeholder="选择模型"
+                          size="small"
+                          style="width: 100%"
+                        >
+                          <el-option label="DeepSeekR1-32B" value="DeepSeekR1-32B" />
+                        </el-select>
+                      </div>
+                      <!-- prompt: 文本域 + 关联按钮 -->
+                      <div v-else-if="row.name === 'prompt'" class="param-value-input textarea-input">
+                        <el-input
+                          v-model="selectedNode.config[row.field]"
+                          placeholder="输入评估规则"
+                          size="small"
+                          type="textarea"
+                          :rows="3"
+                          class="param-textarea-with-btn"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showJudgeModelVariableSelector(row.field)"><Link /></el-icon>
+                      </div>
+                      <!-- to_evaluate/ref: 输入框 + 关联按钮 -->
+                      <div v-else class="param-value-input">
+                        <el-input
+                          v-model="selectedNode.config[row.field]"
+                          placeholder="输入或引用参数值"
+                          size="small"
+                          class="param-input-with-btn"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showJudgeModelVariableSelector(row.field, row.typeField)"><Link /></el-icon>
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+
+            <!-- 输出参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输出</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="[{ name: 'output', type: 'Array<Object>', desc: '评估结果，数组元素是JSON字符串' }]"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="160">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="120" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </template>
+
+          <!-- 表格生成节点配置 -->
+          <template v-if="selectedNode.type === 'tableGenerate'">
+            <!-- 输入参数（可增减） -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输入</span>
+                <el-button type="primary" text size="small" :icon="Plus" @click="addTableGenerateInputParam" style="margin-left: auto;">
+                  添加变量
+                </el-button>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="selectedNode.config.inputParams"
+                  size="small"
+                  class="io-table"
+                  empty-text="暂无输入变量，请添加"
+                >
+                  <el-table-column label="变量名" min-width="140">
+                    <template #default="{ row }">
+                      <el-input v-model="row.name" placeholder="请输入变量名" size="small" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" min-width="160" align="center">
+                    <template #default="{ row, $index }">
+                      <el-select
+                        :model-value="getTableGenerateTypeValue(row)"
+                        placeholder="选择类型"
+                        size="small"
+                        style="width: 100%"
+                        @update:model-value="(val) => handleTableGenerateTypeChange($index, val)"
+                      >
+                        <el-option label="String" value="String" />
+                        <el-option label="Array<String>" value="Array<String>" />
+                        <el-option label="数据字典" value="Dictionary" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="180">
+                    <template #default="{ row, $index }">
+                      <div class="param-value-input">
+                        <el-input
+                          v-model="row.value"
+                          placeholder="输入或引用参数值"
+                          size="small"
+                          class="param-input-with-btn"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showTableGenerateVariableSelector($index)"><Link /></el-icon>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="60" align="center">
+                    <template #default="{ $index }">
+                      <el-button
+                        type="danger"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeTableGenerateInputParam($index)"
+                      />
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+
+            <!-- 输出参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输出</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="[{ name: 'output_excel', type: 'File(Excel)', desc: '生成的表格文件' }]"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="160">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="120" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </template>
+
         </div>
       </div>
     </div>
@@ -4291,6 +4892,39 @@ onUnmounted(() => {
           @click="selectVariable(item.variable)"
         >
           <div class="variable-info">
+            <span class="variable-node">{{ item.nodeName }}</span>
+            <span class="variable-arrow">→</span>
+            <span class="variable-param">{{ item.param }}</span>
+          </div>
+          <div class="variable-meta">
+            <span class="variable-type">{{ item.type }}</span>
+            <span class="variable-expr">{{ item.variable }}</span>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- 循环节点输出变量选择器对话框 -->
+    <el-dialog
+      v-model="showLoopOutputSelectorDialog"
+      title="关联变量"
+      width="500px"
+      class="variable-selector-dialog"
+    >
+      <div class="variable-list">
+        <div v-if="loopOutputSelectorList.length === 0" class="no-variables">
+          暂无可关联的变量
+        </div>
+        <div
+          v-for="(item, index) in loopOutputSelectorList"
+          :key="index"
+          class="variable-item"
+          @click="selectLoopOutputVariable(item)"
+        >
+          <div class="variable-info">
+            <span class="variable-source-tag" :class="'source-' + item.source">
+              {{ item.source === 'start' ? '初始' : item.source === 'upstream' ? '前置' : '循环体' }}
+            </span>
             <span class="variable-node">{{ item.nodeName }}</span>
             <span class="variable-arrow">→</span>
             <span class="variable-param">{{ item.param }}</span>
@@ -6311,6 +6945,12 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 
+.param-type-placeholder {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
 /* 参数值输入样式 */
 .param-value-input {
   display: flex;
@@ -6438,6 +7078,29 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+.variable-source-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.variable-source-tag.source-start {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.variable-source-tag.source-upstream {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.variable-source-tag.source-loopBody {
+  background: #fef3c7;
+  color: #d97706;
 }
 
 .variable-selector-dialog .variable-node {

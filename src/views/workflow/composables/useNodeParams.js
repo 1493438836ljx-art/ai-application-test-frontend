@@ -17,6 +17,11 @@ export const formatParamType = (param) => {
     return `File(${param.fileType})`
   }
 
+  // Dictionary 类型：显示数据字典类型，格式为 Dictionary(DictionaryType)
+  if (param.type === 'Dictionary' && param.dictionaryType) {
+    return `Dictionary(${param.dictionaryType})`
+  }
+
   return param.type
 }
 
@@ -84,6 +89,19 @@ export const getNodeInputParams = (node) => {
     ]
   }
 
+  // 表格提取节点：从 inputParams 读取
+  if (node.type === 'tableExtract') {
+    const inputParams = node.inputParams || [
+      { name: 'file', type: 'File', fileType: 'Excel', required: true, description: '需要提取数据的Excel文件' }
+    ]
+    return inputParams.map((param) => ({
+      name: param.name || '',
+      type: formatParamType(param),
+      required: param.required,
+      description: param.description,
+    }))
+  }
+
   // 循环节点：从 inputParams 读取（固定参数）
   if (node.type === 'loop') {
     const inputParams = node.inputParams || []
@@ -112,9 +130,47 @@ export const getNodeInputParams = (node) => {
     }))
   }
 
-  // 裁判模型节点
+  // 裁判模型节点：从 config 读取配置的参数
   if (node.type === 'judgeModel') {
-    return [{ name: 'input', type: 'Any' }]
+    const config = node.config || {}
+    return [
+      {
+        name: 'model',
+        type: 'String',
+        required: true,
+        description: '所使用的底座大模型',
+      },
+      {
+        name: 'prompt',
+        type: 'String',
+        required: true,
+        description: '裁判模型的评估规则',
+      },
+      {
+        name: 'to_evaluate',
+        type: config.toEvaluateType || 'String',
+        required: true,
+        description: '待评估的内容',
+      },
+      {
+        name: 'ref',
+        type: config.refType || 'String',
+        required: false,
+        description: '参考内容（可选）',
+      },
+    ]
+  }
+
+  // 表格生成节点：从 config.inputParams 读取（用户自定义）
+  if (node.type === 'tableGenerate') {
+    const inputParams = node.config?.inputParams || []
+    if (inputParams.length === 0) {
+      return [{ name: '-', type: '-', isPlaceholder: true }]
+    }
+    return inputParams.map((param) => ({
+      name: param.name || '',
+      type: formatParamType(param),
+    }))
   }
 
   // 其他节点：默认输入参数
@@ -157,6 +213,21 @@ export const getNodeOutputParams = (node) => {
     ]
   }
 
+  // 表格提取节点：从 outputParams 读取
+  if (node.type === 'tableExtract') {
+    const outputParams = node.outputParams || [
+      { name: 'output', type: 'Array', elementType: 'Object', description: '提取的表格数据数组' }
+    ]
+    if (outputParams.length === 0) {
+      return [{ name: 'output', type: 'Array[Object]', isPlaceholder: false }]
+    }
+    return outputParams.map((param) => ({
+      name: param.name || '',
+      type: formatParamType(param),
+      description: param.description,
+    }))
+  }
+
   // 循环节点：从 outputParams 读取
   if (node.type === 'loop') {
     const outputParams = node.outputParams || []
@@ -171,7 +242,8 @@ export const getNodeOutputParams = (node) => {
 
   // HTTPS/HTTP接口调用节点
   if (node.type === 'apiAuto') {
-    const responseValue = node.config?.response
+    // 从 config.responseValue 读取响应示例（与模板中绑定的字段名一致）
+    const responseValue = node.config?.responseValue
     // 尝试解析response是否为JSON结构
     if (responseValue && typeof responseValue === 'string' && responseValue.trim()) {
       try {
@@ -203,18 +275,32 @@ export const getNodeOutputParams = (node) => {
         // 不是有效的JSON，返回默认的response变量
       }
     }
-    // 默认返回response和statusCode
+    // 默认返回 response 和 statusCode（即使没有输入 response 示例）
     return [
       { name: 'response', type: 'String' },
       { name: 'statusCode', type: 'Number' },
     ]
   }
 
-  // 裁判模型节点
+  // 裁判模型节点：输出参数为 output (Array<Object>)
   if (node.type === 'judgeModel') {
     return [
-      { name: 'score', type: 'Number' },
-      { name: 'reason', type: 'String' },
+      {
+        name: 'output',
+        type: 'Array[Object]',
+        description: '评估结果，数组元素是JSON字符串',
+      },
+    ]
+  }
+
+  // 表格生成节点：输出参数为 output_excel (File/Excel)
+  if (node.type === 'tableGenerate') {
+    return [
+      {
+        name: 'output_excel',
+        type: 'File(Excel)',
+        description: '生成的表格文件',
+      },
     ]
   }
 

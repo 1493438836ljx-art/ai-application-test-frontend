@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -20,6 +20,13 @@ import {
   Picture,
   VideoCamera,
 } from '@element-plus/icons-vue'
+import {
+  getDictionaryList,
+  createDictionary,
+  updateDictionary,
+  deleteDictionary,
+  getDictionaryLinkStatus,
+} from '@/api/dictionary'
 
 const router = useRouter()
 
@@ -27,148 +34,78 @@ const router = useRouter()
 const activeTab = ref('datasets')
 
 // 数据字典列表
-const dataDictionaries = ref([
-  {
-    id: 'dict-1',
-    name: '通用对话测试',
-    description: '用于测试模型的基础对话能力，包含多轮对话、意图识别等测试场景',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'input', label: '输入', type: 'string' },
-      { key: 'expectedOutput', label: '期望输出', type: 'string' },
-      { key: 'category', label: '分类', type: 'enum', enumOptions: ['问候', '询问', '建议', '闲聊', '投诉', '咨询'] },
-      { key: 'difficulty', label: '难度', type: 'enum', enumOptions: ['简单', '中等', '困难'] },
-    ],
-    createdAt: '2024-01-15',
-    updatedAt: '2024-02-20',
-  },
-  {
-    id: 'dict-2',
-    name: '代码生成测试',
-    description: '用于测试模型的代码生成能力，包含 Python、Java、SQL 等编程语言的代码生成测试',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'prompt', label: '提示词', type: 'string' },
-      { key: 'expectedCode', label: '期望代码', type: 'string' },
-      { key: 'language', label: '编程语言', type: 'enum', enumOptions: ['Python', 'Java', 'JavaScript', 'SQL', 'Go'] },
-      { key: 'complexity', label: '复杂度', type: 'enum', enumOptions: ['简单', '中等', '复杂'] },
-    ],
-    createdAt: '2024-02-01',
-    updatedAt: '2024-02-15',
-  },
-  {
-    id: 'dict-3',
-    name: '文本摘要测试',
-    description: '用于测试模型的文本摘要能力，包含长文本的摘要生成测试',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'originalText', label: '原文', type: 'string' },
-      { key: 'expectedSummary', label: '期望摘要', type: 'string' },
-      { key: 'maxLength', label: '最大长度', type: 'number' },
-    ],
-    createdAt: '2024-02-25',
-    updatedAt: '2024-02-26',
-  },
-  {
-    id: 'dict-4',
-    name: '问答测试',
-    description: '用于测试模型的问答能力，包含知识问答、推理问答等测试场景',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'question', label: '问题', type: 'string' },
-      { key: 'expectedAnswer', label: '期望答案', type: 'string' },
-      { key: 'domain', label: '领域', type: 'enum', enumOptions: ['科技', '历史', '地理', '文化', '科学'] },
-      { key: 'difficulty', label: '难度', type: 'enum', enumOptions: ['简单', '中等', '困难'] },
-    ],
-    createdAt: '2024-02-10',
-    updatedAt: '2024-02-18',
-  },
-  {
-    id: 'dict-5',
-    name: '情感分析测试',
-    description: '用于测试模型的情感分析能力，包含正面、负面、中性情感的文本分析',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'text', label: '文本', type: 'string' },
-      { key: 'expectedSentiment', label: '期望情感', type: 'enum', enumOptions: ['正面', '负面', '中性'] },
-      { key: 'confidence', label: '置信度阈值', type: 'number' },
-    ],
-    createdAt: '2024-01-20',
-    updatedAt: '2024-02-10',
-  },
-  {
-    id: 'dict-6',
-    name: '翻译测试',
-    description: '用于测试模型的翻译能力，包含中英互译、多语言翻译等测试场景',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'sourceText', label: '源文本', type: 'string' },
-      { key: 'expectedTranslation', label: '期望翻译', type: 'string' },
-      { key: 'sourceLanguage', label: '源语言', type: 'enum', enumOptions: ['中文', '英文', '日文', '韩文'] },
-      { key: 'targetLanguage', label: '目标语言', type: 'enum', enumOptions: ['中文', '英文', '日文', '韩文'] },
-    ],
-    createdAt: '2024-02-10',
-    updatedAt: '2024-02-18',
-  },
-  {
-    id: 'dict-7',
-    name: '关键词提取测试',
-    description: '用于测试模型的关键词提取能力，从文本中提取关键信息',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'text', label: '文本', type: 'string' },
-      { key: 'expectedKeywords', label: '期望关键词', type: 'string' },
-      { key: 'maxKeywords', label: '最大关键词数', type: 'number' },
-    ],
-    createdAt: '2024-02-28',
-    updatedAt: '2024-02-28',
-  },
-  {
-    id: 'dict-8',
-    name: '文本相似度测试',
-    description: '用于测试模型的文本相似度计算能力，判断两段文本的相似程度',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string' },
-      { key: 'text1', label: '文本1', type: 'string' },
-      { key: 'text2', label: '文本2', type: 'string' },
-      { key: 'expectedSimilarity', label: '期望相似度', type: 'number' },
-    ],
-    createdAt: '2024-01-20',
-    updatedAt: '2024-02-10',
-  },
-])
+const dataDictionaries = ref([])
+
+// 数据字典加载状态
+const dictionaryLoading = ref(false)
+
+// 数据字典总数（用于分页）
+const dictTotalFromApi = ref(0)
 
 // 数据字典搜索
 const dictSearchKeyword = ref('')
 
-// 过滤后的数据字典
-const filteredDictionaries = computed(() => {
-  if (!dictSearchKeyword.value) {
-    return dataDictionaries.value
+// 搜索防抖定时器
+let searchDebounceTimer = null
+
+// 加载数据字典列表
+const loadDictionaries = async () => {
+  dictionaryLoading.value = true
+  try {
+    const params = {
+      page: dictCurrentPage.value,
+      size: dictPageSize.value,
+    }
+    if (dictSearchKeyword.value) {
+      params.keyword = dictSearchKeyword.value
+    }
+    const response = await getDictionaryList(params)
+    if (response.code === 200) {
+      // 转换API响应格式到前端格式
+      dataDictionaries.value = response.data.list.map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description || '',
+        columns: item.columns || [],
+        linkedDatasetCount: item.linkedDatasetCount || 0,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      }))
+      dictTotalFromApi.value = response.data.total
+    }
+  } catch (error) {
+    ElMessage.error('系统服务异常！')
+    console.error('加载数据字典失败:', error)
+  } finally {
+    dictionaryLoading.value = false
   }
-  const keyword = dictSearchKeyword.value.toLowerCase()
-  return dataDictionaries.value.filter(dict =>
-    dict.name.toLowerCase().includes(keyword) ||
-    dict.columns.some(col =>
-      col.key.toLowerCase().includes(keyword) ||
-      col.label.toLowerCase().includes(keyword)
-    )
-  )
-})
+}
+
+// 处理搜索输入（带防抖）
+const handleDictSearch = () => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+  }
+  searchDebounceTimer = setTimeout(() => {
+    dictCurrentPage.value = 1
+    loadDictionaries()
+  }, 300)
+}
+
+// 监听搜索关键词变化
+const onDictSearchChange = () => {
+  handleDictSearch()
+}
 
 // 数据字典分页
 const dictCurrentPage = ref(1)
 const dictPageSize = ref(10)
 
-// 数据字典总数
-const dictTotal = computed(() => filteredDictionaries.value.length)
+// 数据字典总数（使用API返回的总数）
+const dictTotal = computed(() => dictTotalFromApi.value)
 
-// 当前页的数据字典
-const paginatedDictionaries = computed(() => {
-  const start = (dictCurrentPage.value - 1) * dictPageSize.value
-  const end = start + dictPageSize.value
-  return filteredDictionaries.value.slice(start, end)
-})
+// 当前页的数据字典（直接使用API返回的数据）
+const paginatedDictionaries = computed(() => dataDictionaries.value)
 
 // 获取列类型显示文本
 const getColumnTypeText = (type) => {
@@ -180,14 +117,15 @@ const getColumnTypeText = (type) => {
   return typeMap[type] || type
 }
 
-// 获取数据字典关联的测评集列表
+// 获取数据字典关联的测评集列表（保留用于查看详情对话框）
 const getLinkedDatasets = (dictionaryId) => {
   return allDatasets.value.filter(d => d.dictionaryId === dictionaryId)
 }
 
-// 获取数据字典关联的测评集数量
+// 获取数据字典关联的测评集数量（用于卡片显示）
 const getLinkedDatasetCount = (dictionaryId) => {
-  return getLinkedDatasets(dictionaryId).length
+  if (!dictionaryId) return 0
+  return allDatasets.value.filter(d => d.dictionaryId === dictionaryId).length
 }
 
 // 根据字典ID获取字典名称
@@ -418,18 +356,47 @@ const openViewDictionaryDialog = (dict) => {
 }
 
 // 删除数据字典
-const handleDeleteDictionary = (dict) => {
-  ElMessageBox.confirm(`确定要删除数据字典「${dict.name}」吗？删除后无法恢复。`, '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(() => {
-    const index = dataDictionaries.value.findIndex(d => d.id === dict.id)
-    if (index !== -1) {
-      dataDictionaries.value.splice(index, 1)
-      ElMessage.success('删除成功')
+const handleDeleteDictionary = async (dict) => {
+  try {
+    // 先检查关联状态
+    const linkStatus = await getDictionaryLinkStatus(dict.id)
+
+    if (linkStatus.code === 200 && !linkStatus.data.canDelete) {
+      // 有关联的测评集，无法删除
+      const linkedCount = linkStatus.data.linkedDatasetCount || 0
+      const linkedNames = linkStatus.data.linkedDatasets?.map(d => d.name).join('、') || ''
+      ElMessageBox.alert(
+        `该字典已被 ${linkedCount} 个测评集关联，无法删除。关联的测评集：${linkedNames}`,
+        '无法删除',
+        {
+          confirmButtonText: '关闭',
+          type: 'warning',
+        }
+      )
+      return
     }
-  })
+
+    // 可以删除，弹出确认框
+    await ElMessageBox.confirm(`确定要删除数据字典「${dict.name}」吗？删除后无法恢复。`, '删除确认', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+
+    // 执行删除
+    const response = await deleteDictionary(dict.id)
+    if (response.code === 200) {
+      ElMessage.success('删除成功')
+      loadDictionaries()
+    } else {
+      ElMessage.error(response.message || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('系统服务异常！')
+      console.error('删除数据字典失败:', error)
+    }
+  }
 }
 
 // 添加字段
@@ -471,6 +438,7 @@ const handleDictionarySubmit = async () => {
 
     const dictionaryData = {
       name: dictionaryForm.name,
+      description: dictionaryForm.name, // 使用名称作为描述
       columns: dictionaryForm.columns.map(col => ({
         key: col.key.trim(),
         label: col.label.trim(),
@@ -478,33 +446,38 @@ const handleDictionarySubmit = async () => {
         ...(col.type === 'number' && { min: col.min, max: col.max }),
         ...(col.type === 'enum' && { enumOptions: col.enumOptions }),
       })),
-      updatedAt: new Date().toISOString().slice(0, 10),
     }
 
     if (isDictionaryEditMode.value) {
-      // 编辑模式：更新现有数据字典
-      const index = dataDictionaries.value.findIndex(d => d.id === editingDictionaryId.value)
-      if (index !== -1) {
-        dataDictionaries.value[index] = {
-          ...dataDictionaries.value[index],
-          ...dictionaryData,
-        }
+      // 编辑模式：调用更新API
+      const response = await updateDictionary(editingDictionaryId.value, dictionaryData)
+      if (response.code === 200) {
         ElMessage.success('数据字典更新成功')
+        dictionaryDialogVisible.value = false
+        loadDictionaries()
+      } else {
+        ElMessage.error(response.message || '更新失败')
       }
     } else {
-      // 新建模式：创建新数据字典
-      const newDictionary = {
-        id: `dict-${Date.now()}`,
-        ...dictionaryData,
-        createdAt: new Date().toISOString().slice(0, 10),
+      // 新建模式：调用创建API
+      const response = await createDictionary(dictionaryData)
+      if (response.code === 200) {
+        ElMessage.success('数据字典创建成功')
+        dictionaryDialogVisible.value = false
+        loadDictionaries()
+        // 如果是在测评集创建弹窗中新建字典，自动选中新创建的字典
+        if (response.data && response.data.id) {
+          formData.dictionaryId = response.data.id
+        }
+      } else {
+        ElMessage.error(response.message || '创建失败')
       }
-      dataDictionaries.value.unshift(newDictionary)
-      formData.dictionaryId = newDictionary.id
-      ElMessage.success('数据字典创建成功')
     }
-    dictionaryDialogVisible.value = false
-  } catch {
-    // 表单验证失败，Element Plus 会自动显示错误提示
+  } catch (error) {
+    if (error !== 'validation failed') {
+      ElMessage.error('系统服务异常！')
+      console.error('提交数据字典失败:', error)
+    }
   }
 }
 
@@ -1445,12 +1418,19 @@ const handleSizeChange = (size) => {
 // 数据字典分页处理
 const handleDictPageChange = (page) => {
   dictCurrentPage.value = page
+  loadDictionaries()
 }
 
 const handleDictSizeChange = (size) => {
   dictPageSize.value = size
   dictCurrentPage.value = 1
+  loadDictionaries()
 }
+
+// 组件挂载时加载数据字典
+onMounted(() => {
+  loadDictionaries()
+})
 </script>
 
 <template>
@@ -1658,7 +1638,7 @@ const handleDictSizeChange = (size) => {
             :prefix-icon="Search"
             clearable
             style="width: 300px"
-            @input="dictCurrentPage = 1"
+            @input="onDictSearchChange"
           />
         </div>
 

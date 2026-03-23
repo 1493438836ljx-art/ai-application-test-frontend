@@ -68,6 +68,34 @@ export const useVariableTypeStore = defineStore('variableType', () => {
   })
 
   /**
+   * 获取数据字典类型列表
+   * 后端返回 category: "COMPOSITE" 且有 dictionaryType 字段
+   */
+  const dictionaryTypes = computed(() => {
+    const dictTypes = variableTypes.value
+      .filter((t) => t.category === 'COMPOSITE' && t.dictionaryType)
+      .map((t) => ({
+        value: t.dictionaryType,
+        label: t.dictionaryType,
+      }))
+    // 如果没有从后端获取到，返回默认的数据字典类型
+    if (dictTypes.length === 0) {
+      return [
+        { value: '公文写作数据字典', label: '公文写作数据字典' },
+        { value: '会议纪要数据字典', label: '会议纪要数据字典' },
+      ]
+    }
+    return dictTypes
+  })
+
+  /**
+   * 获取基本类型选项（不含 Array 和 File，用于循环节点输出变量类型选择）
+   */
+  const basicTypeOptions = computed(() => {
+    return basicTypes.value
+  })
+
+  /**
    * 生成级联选择器选项
    * 格式: [{ value: 'String', label: 'String' }, { value: 'Array', label: 'Array', children: [...] }, ...]
    */
@@ -94,6 +122,15 @@ export const useVariableTypeStore = defineStore('variableType', () => {
         value: 'File',
         label: 'File',
         children: fileTypes.value,
+      })
+    }
+
+    // Dictionary 复合类型（数据字典）
+    if (dictionaryTypes.value.length > 0) {
+      options.push({
+        value: 'Dictionary',
+        label: 'Dictionary',
+        children: dictionaryTypes.value,
       })
     }
 
@@ -173,6 +210,10 @@ export const useVariableTypeStore = defineStore('variableType', () => {
       { code: 'File<Doc>', name: '文档文件', category: 'COMPOSITE', fileType: 'Doc' },
       { code: 'File<Excel>', name: 'Excel文件', category: 'COMPOSITE', fileType: 'Excel' },
       { code: 'File<Txt>', name: '文本文件', category: 'COMPOSITE', fileType: 'Txt' },
+      // 复合类型 - Dictionary (COMPOSITE with dictionaryType)
+      { code: 'Dictionary', name: '数据字典', category: 'COMPOSITE' },
+      { code: 'Dictionary<公文写作数据字典>', name: '公文写作数据字典', category: 'COMPOSITE', dictionaryType: '公文写作数据字典' },
+      { code: 'Dictionary<会议纪要数据字典>', name: '会议纪要数据字典', category: 'COMPOSITE', dictionaryType: '会议纪要数据字典' },
     ]
     loaded.value = true
   }
@@ -197,7 +238,9 @@ export const useVariableTypeStore = defineStore('variableType', () => {
     basicTypes,
     arrayElementTypes,
     fileTypes,
+    dictionaryTypes,
     typeOptions,
+    basicTypeOptions,
 
     // 方法
     loadVariableTypes,

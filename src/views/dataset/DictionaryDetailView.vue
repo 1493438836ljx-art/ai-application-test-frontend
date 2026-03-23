@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -11,6 +11,12 @@ import {
   FolderOpened,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getDictionaryDetail,
+  updateDictionary,
+  deleteDictionary,
+  getDictionaryLinkStatus,
+} from '@/api/dictionary'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,154 +27,51 @@ const dictionary = ref(null)
 // 关联的测评集列表
 const linkedDatasets = ref([])
 
-// 模拟所有测评集数据
-const allDatasets = ref([
-  {
-    id: '1',
-    name: '通用对话测评集',
-    icon: 'ChatDotRound',
-    iconType: 'preset',
-    testType: 'objective',
-    tags: ['对话', '通用'],
-    description: '包含多轮对话、常识问答等通用场景的测试数据',
-    dataCount: 256,
-    dictionaryId: 'dict-1',
-    createdAt: '2024-01-15',
-    updatedAt: '2024-02-20',
-  },
-  {
-    id: '9',
-    name: '情感分析测评集',
-    icon: 'ChatDotRound',
-    iconType: 'preset',
-    testType: 'objective',
-    tags: ['情感', 'NLP'],
-    description: '包含文本情感分类、情绪识别等任务',
-    dataCount: 200,
-    dictionaryId: 'dict-5',
-    createdAt: '2024-02-17',
-    updatedAt: '2024-02-26',
-  },
-  {
-    id: '10',
-    name: '文本摘要测评集',
-    icon: 'Document',
-    iconType: 'preset',
-    testType: 'subjective',
-    tags: ['摘要', '生成'],
-    description: '包含新闻摘要、论文摘要等任务',
-    dataCount: 156,
-    dictionaryId: 'dict-3',
-    createdAt: '2024-02-18',
-    updatedAt: '2024-02-26',
-  },
-  {
-    id: '12',
-    name: 'SQL生成测评集',
-    icon: 'Cpu',
-    iconType: 'preset',
-    testType: 'objective',
-    tags: ['SQL', '数据库'],
-    description: '包含自然语言转SQL的任务',
-    dataCount: 120,
-    dictionaryId: 'dict-2',
-    createdAt: '2024-02-20',
-    updatedAt: '2024-02-26',
-  },
-  {
-    id: '13',
-    name: '文本分类测评集',
-    icon: 'ChatDotRound',
-    iconType: 'preset',
-    testType: 'objective',
-    tags: ['分类', 'NLP'],
-    description: '包含新闻分类、意图识别等任务',
-    dataCount: 280,
-    dictionaryId: 'dict-1',
-    createdAt: '2024-02-21',
-    updatedAt: '2024-02-26',
-  },
-])
+// 加载状态
+const loading = ref(false)
 
-// 模拟数据字典数据
-const mockDictionaries = {
-  'dict-1': {
-    id: 'dict-1',
-    name: '通用对话测试',
-    description: '用于测试模型的基础对话能力，包含多轮对话、意图识别等测试场景',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string', description: '唯一标识符' },
-      { key: 'input', label: '输入', type: 'string', description: '用户输入内容' },
-      { key: 'expectedOutput', label: '期望输出', type: 'string', description: '期望的模型输出' },
-      { key: 'category', label: '分类', type: 'enum', enumOptions: ['问候', '询问', '建议', '闲聊', '投诉', '咨询'], description: '对话分类' },
-      { key: 'difficulty', label: '难度', type: 'enum', enumOptions: ['简单', '中等', '困难'], description: '测试难度等级' },
-    ],
-    createdAt: '2024-01-15',
-    updatedAt: '2024-02-20',
-  },
-  'dict-2': {
-    id: 'dict-2',
-    name: '代码生成测试',
-    description: '用于测试模型的代码生成能力',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string', description: '唯一标识符' },
-      { key: 'prompt', label: '提示词', type: 'string', description: '代码生成提示' },
-      { key: 'expectedCode', label: '期望代码', type: 'string', description: '期望生成的代码' },
-      { key: 'language', label: '编程语言', type: 'enum', enumOptions: ['Python', 'JavaScript', 'Java', 'C++', 'Go'], description: '目标编程语言' },
-    ],
-    createdAt: '2024-02-01',
-    updatedAt: '2024-02-15',
-  },
-  'dict-3': {
-    id: 'dict-3',
-    name: '文本摘要测试',
-    description: '用于测试模型的文本摘要能力',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string', description: '唯一标识符' },
-      { key: 'originalText', label: '原文', type: 'string', description: '待摘要的原文' },
-      { key: 'expectedSummary', label: '期望摘要', type: 'string', description: '期望的摘要内容' },
-      { key: 'length', label: '摘要长度', type: 'enum', enumOptions: ['短', '中', '长'], description: '目标摘要长度' },
-    ],
-    createdAt: '2024-02-25',
-    updatedAt: '2024-02-26',
-  },
-  'dict-4': {
-    id: 'dict-4',
-    name: '阅读理解测试',
-    description: '用于测试模型的阅读理解和信息提取能力',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string', description: '唯一标识符' },
-      { key: 'context', label: '上下文', type: 'string', description: '阅读材料' },
-      { key: 'question', label: '问题', type: 'string', description: '待回答的问题' },
-      { key: 'expectedAnswer', label: '期望答案', type: 'string', description: '期望的答案' },
-    ],
-    createdAt: '2024-02-19',
-    updatedAt: '2024-02-26',
-  },
-  'dict-5': {
-    id: 'dict-5',
-    name: '情感分析测试',
-    description: '用于测试模型的情感分析能力',
-    columns: [
-      { key: 'id', label: 'ID', type: 'string', description: '唯一标识符' },
-      { key: 'text', label: '文本', type: 'string', description: '待分析文本' },
-      { key: 'expectedSentiment', label: '期望情感', type: 'enum', enumOptions: ['正面', '负面', '中性'], description: '期望的情感分类' },
-    ],
-    createdAt: '2024-02-17',
-    updatedAt: '2024-02-26',
-  },
+// 编辑对话框
+const editDialogVisible = ref(false)
+const editFormRef = ref()
+const editForm = reactive({
+  name: '',
+  description: '',
+  columns: [],
+})
+
+// 编辑表单验证规则
+const editFormRules = {
+  name: [
+    { required: true, message: '请输入数据字典名称', trigger: 'blur' },
+    { min: 2, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' },
+  ],
 }
 
 // 加载数据字典数据
-const loadDictionary = () => {
+const loadDictionary = async () => {
   const id = route.params.id
-  dictionary.value = mockDictionaries[id] || null
-
-  if (dictionary.value) {
-    // 加载关联的测评集
-    linkedDatasets.value = allDatasets.value.filter(
-      (d) => d.dictionaryId === dictionary.value.id
-    )
+  loading.value = true
+  try {
+    const response = await getDictionaryDetail(id)
+    if (response.code === 200) {
+      dictionary.value = {
+        id: response.data.id,
+        name: response.data.name,
+        description: response.data.description || '',
+        columns: response.data.columns || [],
+        createdAt: response.data.createdAt,
+        updatedAt: response.data.updatedAt,
+      }
+      // 加载关联的测评集
+      linkedDatasets.value = response.data.linkedDatasets || []
+    } else {
+      ElMessage.error(response.message || '加载数据字典失败')
+    }
+  } catch (error) {
+    ElMessage.error('系统服务异常！')
+    console.error('加载数据字典失败:', error)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -204,26 +107,129 @@ const getFieldTypeText = (type) => {
   return typeMap[type] || type
 }
 
-// 编辑数据字典
-const handleEdit = () => {
-  ElMessage.info('编辑功能开发中')
+// 打开编辑对话框
+const openEditDialog = () => {
+  if (!dictionary.value) return
+  editForm.name = dictionary.value.name
+  editForm.description = dictionary.value.description || ''
+  editForm.columns = dictionary.value.columns.map(col => ({
+    id: col.id,
+    key: col.key,
+    label: col.label,
+    type: col.type,
+    ...(col.enumOptions && { enumOptions: Array.isArray(col.enumOptions) ? col.enumOptions.join(',') : col.enumOptions }),
+    ...(col.min !== undefined && { min: col.min }),
+    ...(col.max !== undefined && { max: col.max }),
+  }))
+  editDialogVisible.value = true
+}
+
+// 添加字段
+const addEditColumn = () => {
+  editForm.columns.push({
+    key: '',
+    label: '',
+    type: 'string',
+  })
+}
+
+// 删除字段
+const removeEditColumn = (index) => {
+  if (editForm.columns.length > 1) {
+    editForm.columns.splice(index, 1)
+  }
+}
+
+// 提交编辑
+const handleEditSubmit = async () => {
+  if (!editFormRef.value) return
+
+  try {
+    await editFormRef.value.validate()
+
+    // 验证字段
+    if (editForm.columns.length === 0) {
+      ElMessage.warning('请至少添加1个字段')
+      return
+    }
+
+    const hasEmptyField = editForm.columns.some(col => !col.key?.trim() || !col.label?.trim())
+    if (hasEmptyField) {
+      ElMessage.warning('请填写所有字段的Key和名称')
+      return
+    }
+
+    const updateData = {
+      name: editForm.name,
+      description: editForm.description,
+      columns: editForm.columns.map(col => ({
+        ...(col.id && { id: col.id }),
+        key: col.key.trim(),
+        label: col.label.trim(),
+        type: col.type,
+        ...(col.type === 'number' && { min: col.min, max: col.max }),
+        ...(col.type === 'enum' && { enumOptions: col.enumOptions }),
+      })),
+    }
+
+    const response = await updateDictionary(dictionary.value.id, updateData)
+    if (response.code === 200) {
+      ElMessage.success('更新成功')
+      editDialogVisible.value = false
+      loadDictionary()
+    } else {
+      ElMessage.error(response.message || '更新失败')
+    }
+  } catch (error) {
+    if (error !== 'validation failed') {
+      ElMessage.error('系统服务异常！')
+      console.error('更新数据字典失败:', error)
+    }
+  }
 }
 
 // 删除数据字典
-const handleDelete = () => {
-  if (linkedDatasets.value.length > 0) {
-    ElMessage.warning(`该字典已被 ${linkedDatasets.value.length} 个测评集关联，无法删除`)
-    return
-  }
+const handleDelete = async () => {
+  try {
+    // 先检查关联状态
+    const linkStatus = await getDictionaryLinkStatus(dictionary.value.id)
 
-  ElMessageBox.confirm('确定要删除该数据字典吗？', '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  }).then(() => {
-    ElMessage.success('删除成功')
-    goBack()
-  })
+    if (linkStatus.code === 200 && !linkStatus.data.canDelete) {
+      // 有关联的测评集，无法删除
+      const linkedCount = linkStatus.data.linkedDatasetCount || 0
+      const linkedNames = linkStatus.data.linkedDatasets?.map(d => d.name).join('、') || ''
+      ElMessageBox.alert(
+        `该字典已被 ${linkedCount} 个测评集关联，无法删除。关联的测评集：${linkedNames}`,
+        '无法删除',
+        {
+          confirmButtonText: '关闭',
+          type: 'warning',
+        }
+      )
+      return
+    }
+
+    // 可以删除，弹出确认框
+    await ElMessageBox.confirm('确定要删除该数据字典吗？删除后无法恢复。', '删除确认', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+
+    // 执行删除
+    const response = await deleteDictionary(dictionary.value.id)
+    if (response.code === 200) {
+      ElMessage.success('删除成功')
+      goBack()
+    } else {
+      ElMessage.error(response.message || '删除失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('系统服务异常！')
+      console.error('删除数据字典失败:', error)
+    }
+  }
 }
 
 onMounted(() => {
@@ -252,7 +258,7 @@ onMounted(() => {
         </div>
       </div>
       <div class="header-actions">
-        <el-button :icon="Edit" @click="handleEdit">编辑</el-button>
+        <el-button :icon="Edit" @click="openEditDialog">编辑</el-button>
         <el-button :icon="Delete" type="danger" @click="handleDelete">删除</el-button>
       </div>
     </div>
@@ -363,6 +369,151 @@ onMounted(() => {
 
       <el-empty v-else description="暂无关联的测评集" :image-size="80" />
     </el-card>
+
+    <!-- 编辑数据字典弹窗 -->
+    <el-dialog
+      v-model="editDialogVisible"
+      title="编辑数据字典"
+      width="680px"
+      :close-on-click-modal="false"
+      class="edit-dictionary-dialog"
+    >
+      <div class="edit-form-container">
+        <!-- 基本信息 -->
+        <div class="form-section">
+          <div class="section-header">
+            <div class="section-icon basic-icon">
+              <el-icon><Collection /></el-icon>
+            </div>
+            <span class="section-title">基本信息</span>
+          </div>
+          <div class="section-content">
+            <el-form
+              ref="editFormRef"
+              :model="editForm"
+              :rules="editFormRules"
+              label-width="80px"
+              label-position="left"
+            >
+              <el-form-item label="名称" prop="name">
+                <el-input
+                  v-model="editForm.name"
+                  placeholder="请输入数据字典名称"
+                  maxlength="50"
+                  show-word-limit
+                />
+              </el-form-item>
+              <el-form-item label="描述" prop="description">
+                <el-input
+                  v-model="editForm.description"
+                  type="textarea"
+                  placeholder="请输入数据字典描述"
+                  :rows="3"
+                  maxlength="500"
+                  show-word-limit
+                />
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+
+        <!-- 字段定义 -->
+        <div class="form-section">
+          <div class="section-header">
+            <div class="section-icon field-icon">
+              <el-icon><Edit /></el-icon>
+            </div>
+            <span class="section-title">字段定义</span>
+          </div>
+          <div class="section-content">
+            <div class="columns-form">
+              <div
+                v-for="(column, index) in editForm.columns"
+                :key="index"
+                class="column-item"
+              >
+                <div class="column-header">
+                  <span class="column-index">
+                    <span class="index-num">{{ index + 1 }}</span>
+                    <span class="index-label">字段</span>
+                  </span>
+                  <el-button
+                    v-if="editForm.columns.length > 1"
+                    type="danger"
+                    link
+                    size="small"
+                    @click="removeEditColumn(index)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                    删除
+                  </el-button>
+                </div>
+                <div class="column-row">
+                  <div class="column-field">
+                    <label class="field-label"><span class="required">*</span> 字段Key</label>
+                    <el-input v-model="column.key" placeholder="如: id" />
+                  </div>
+                  <div class="column-field">
+                    <label class="field-label"><span class="required">*</span> 字段名称</label>
+                    <el-input v-model="column.label" placeholder="如: ID" />
+                  </div>
+                  <div class="column-field">
+                    <label class="field-label">字段类型</label>
+                    <el-select v-model="column.type" placeholder="选择类型">
+                      <el-option label="字符串" value="string" />
+                      <el-option label="数字" value="number" />
+                      <el-option label="枚举" value="enum" />
+                    </el-select>
+                  </div>
+                </div>
+                <!-- 数字类型额外配置 -->
+                <div v-if="column.type === 'number'" class="column-extra">
+                  <div class="column-field column-field-small">
+                    <label class="field-label">最小值</label>
+                    <el-input v-model="column.min" placeholder="可选" type="number" />
+                  </div>
+                  <div class="column-field column-field-small">
+                    <label class="field-label">最大值</label>
+                    <el-input v-model="column.max" placeholder="可选" type="number" />
+                  </div>
+                </div>
+                <!-- 枚举类型额外配置 -->
+                <div v-if="column.type === 'enum'" class="column-extra">
+                  <div class="column-field column-field-full">
+                    <label class="field-label">枚举值</label>
+                    <el-input
+                      v-model="column.enumOptions"
+                      placeholder="多个枚举值用逗号分隔，如: 选项1,选项2,选项3"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="column-actions">
+                <el-button
+                  v-if="editForm.columns.length < 10"
+                  type="primary"
+                  link
+                  :icon="Edit"
+                  @click="addEditColumn"
+                >
+                  添加字段
+                </el-button>
+                <span v-else class="field-limit-tip">
+                  最多支持10个字段
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="editDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleEditSubmit">保存修改</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
