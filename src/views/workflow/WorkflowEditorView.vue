@@ -12,12 +12,9 @@ import {
   FullScreen,
   Delete,
   Plus,
-  ChatDotRound,
   Document,
   Connection,
-  Cpu,
   DataAnalysis,
-  Brush,
   Link,
   Timer,
   Close,
@@ -25,18 +22,6 @@ import {
   Edit,
   CopyDocument,
   CircleCheck,
-  Picture,
-  Crop,
-  Monitor,
-  Microphone,
-  Film,
-  EditPen,
-  Cpu as Robot,
-  Stopwatch,
-  TrendCharts,
-  DataLine,
-  DocumentAdd,
-  Files,
   Grid,
   Upload,
   Tools,
@@ -46,6 +31,14 @@ import {
   Position,
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/chat/AiChat.vue'
+import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
+import { useAssociations } from './composables/useAssociations'
+import { useNodeParams } from './composables/useNodeParams'
+import { useVariableTypeStore } from '@/stores/variableType.js'
+import { getNodeTypes } from '@/api/nodeType.js'
+import { getDefaultWorkflow } from '@/api/workflow.js'
+import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
+import { marked } from 'marked'
 
 const route = useRoute()
 const router = useRouter()
@@ -68,81 +61,135 @@ const canvas = reactive({
   height: 2000,
 })
 
-// 节点类型分组配置
+// 节点类型分组配置（与后端分类对应）
 const nodeCategories = [
-  { key: 'logic', name: '逻辑处理' },
-  { key: 'testDesign', name: '测试设计' },
-  { key: 'testPrep', name: '测试准备' },
-  { key: 'testExec', name: '测试执行' },
-  { key: 'eval', name: '结果评估' },
-  { key: 'report', name: '报告' },
+  { key: 'BASIC', name: '基础节点' },
+  { key: 'LOGIC', name: '逻辑控制' },
+  { key: 'DATA_PREPARE', name: '数据准备' },
+  { key: 'TEXT', name: '文本处理' },
+  { key: 'IMAGE', name: '图像处理' },
+  { key: 'AUDIO_VIDEO', name: '音视频处理' },
+  { key: 'TEST_DESIGN', name: '测试设计' },
+  { key: 'TEST_EXEC', name: '测试执行' },
+  { key: 'EVALUATE', name: '结果评估' },
+  { key: 'REPORT', name: '报告生成' },
 ]
 
-// 节点类型配置
-const nodeTypes = [
+// 节点类型配置（从后端动态获取）
+const nodeTypes = ref([
   // 基础（不在弹窗中显示）
-  { type: 'start', name: '开始', icon: 'VideoPlay', color: '#10b981', category: 'basic' },
-  { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'basic' },
+  { type: 'start', name: '开始', icon: 'VideoPlay', color: '#10b981', category: 'BASIC' },
+  { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'BASIC' },
+  { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC' },
   // 逻辑处理
-  { type: 'condition', name: '条件判断', icon: 'Brush', color: '#ec4899', category: 'logic' },
-  { type: 'loop', name: '循环', icon: 'Timer', color: '#3b82f6', category: 'logic' },
+  { type: 'loop', name: '循环', icon: 'Timer', color: '#3b82f6', category: 'LOGIC' },
   // 测试准备
-  { type: 'envConnect', name: '环境对接', icon: 'Monitor', color: '#64748b', category: 'testPrep' },
-  { type: 'tableExtract', name: '表格提取', icon: 'Grid', color: '#10b981', category: 'testPrep' },
-  { type: 'textClean', name: '文本清洗', icon: 'Document', color: '#6366f1', category: 'testPrep' },
-  { type: 'textDedupe', name: '文本去重', icon: 'Files', color: '#8b5cf6', category: 'testPrep' },
-  { type: 'textGeneralize', name: '文本泛化', icon: 'EditPen', color: '#a855f7', category: 'testPrep' },
-  { type: 'textGenerate', name: '文本生成', icon: 'ChatDotRound', color: '#06b6d4', category: 'testPrep' },
-  { type: 'imageGenerate', name: '图像生成', icon: 'Picture', color: '#f59e0b', category: 'testPrep' },
-  { type: 'imageCutout', name: '抠图', icon: 'Crop', color: '#84cc16', category: 'testPrep' },
-  { type: 'imageEnhance', name: '画质提升', icon: 'DataLine', color: '#22c55e', category: 'testPrep' },
-  { type: 'videoExtractAudio', name: '视频提取音频', icon: 'Film', color: '#0ea5e9', category: 'testPrep' },
-  { type: 'audioToText', name: '音频转文本', icon: 'Microphone', color: '#14b8a6', category: 'testPrep' },
-  { type: 'videoFrame', name: '视频抽帧', icon: 'Film', color: '#64748b', category: 'testPrep' },
-  // 测试设计
-  { type: 'testPlan', name: '测试方案生成', icon: 'DocumentAdd', color: '#f97316', category: 'testDesign' },
+  { type: 'textClean', name: '文本清洗', icon: 'Document', color: '#6366f1', category: 'DATA_PREPARE' },
   // 测试执行
-  { type: 'apiAuto', name: 'HTTPS/HTTP接口调用', icon: 'Connection', color: '#3b82f6', category: 'testExec' },
-  { type: 'aiAuto', name: 'AI自动化', icon: 'Cpu', color: '#8b5cf6', category: 'testExec' },
+  { type: 'apiAuto', name: 'HTTPS/HTTP接口调用', icon: 'Connection', color: '#3b82f6', category: 'TEST_EXEC' },
   // 结果评估
-  { type: 'judgeModel', name: '裁判模型', icon: 'DataAnalysis', color: '#ec4899', category: 'eval' },
-  { type: 'firstTokenLatency', name: '首Token响应时延', icon: 'Stopwatch', color: '#f59e0b', category: 'eval' },
-  { type: 'tokenOutputTime', name: '每Token输出耗时', icon: 'TrendingCharts', color: '#06b6d4', category: 'eval' },
-  { type: 'e2eLatency', name: '端到端时延', icon: 'Timer', color: '#6366f1', category: 'eval' },
-  // 报告
-  { type: 'reportGenerate', name: '生成报告', icon: 'DocumentAdd', color: '#10b981', category: 'report' },
-  { type: 'reportAnalysis', name: '报告分析', icon: 'TrendCharts', color: '#0ea5e9', category: 'report' },
-]
+  { type: 'judgeModel', name: '裁判模型', icon: 'DataAnalysis', color: '#ec4899', category: 'EVALUATE' },
+])
+
+// 加载节点类型数据
+const loadNodeTypes = async () => {
+  try {
+    const response = await getNodeTypes()
+    if (response && Array.isArray(response)) {
+      // 保留基础节点类型（不在弹窗中显示）
+      const basicNodeTypes = [
+        { type: 'start', name: '开始', icon: 'VideoPlay', color: '#10b981', category: 'BASIC' },
+        { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'BASIC' },
+        { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC' },
+      ]
+      // 默认图标映射（用于后端未返回icon的情况）
+      const defaultIconMap = {
+        condition: 'Share',
+        loop: 'Refresh',
+        envConnect: 'Connection',
+        tableExtract: 'Document',
+        textClean: 'Scissors',
+        textDedupe: 'CopyDocument',
+        textGeneralize: 'EditPen',
+        textGenerate: 'Edit',
+        imageGenerate: 'Picture',
+        imageCutout: 'Crop',
+        imageEnhance: 'MagicStick',
+        videoExtractAudio: 'Headset',
+        audioToText: 'Microphone',
+        videoFrame: 'VideoCamera',
+        testPlan: 'List',
+        apiAuto: 'Connection',
+        aiAuto: 'Cpu',
+        judgeModel: 'DataAnalysis',
+        firstTokenLatency: 'Timer',
+        tokenOutputTime: 'Stopwatch',
+        e2eLatency: 'Clock',
+        reportGenerate: 'Document',
+        reportAnalysis: 'Search',
+      }
+      // 默认颜色映射
+      const defaultColorMap = {
+        condition: '#f59e0b',
+        loop: '#8b5cf6',
+        envConnect: '#3b82f6',
+        tableExtract: '#6366f1',
+        textClean: '#14b8a6',
+        textDedupe: '#64748b',
+        textGeneralize: '#8b5cf6',
+        textGenerate: '#06b6d4',
+        imageGenerate: '#ec4899',
+        imageCutout: '#f43f5e',
+        imageEnhance: '#a855f7',
+        videoExtractAudio: '#0ea5e9',
+        audioToText: '#14b8a6',
+        videoFrame: '#f97316',
+        testPlan: '#3b82f6',
+        apiAuto: '#3b82f6',
+        aiAuto: '#f97316',
+        judgeModel: '#ec4899',
+        firstTokenLatency: '#f59e0b',
+        tokenOutputTime: '#84cc16',
+        e2eLatency: '#06b6d4',
+        reportGenerate: '#3b82f6',
+        reportAnalysis: '#8b5cf6',
+      }
+      // 映射后端数据到前端格式
+      const apiNodeTypes = response.map((item) => ({
+        type: item.code, // 后端字段 code 映射为前端 type
+        name: item.name,
+        icon: item.icon || defaultIconMap[item.code] || 'Document',
+        color: item.color || defaultColorMap[item.code] || '#6366f1',
+        category: item.category,
+        description: item.description,
+      }))
+      nodeTypes.value = [...basicNodeTypes, ...apiNodeTypes]
+    }
+  } catch (error) {
+    console.error('加载节点类型失败:', error)
+    ElMessage.error('系统服务异常！')
+  }
+}
 
 // 节点功能描述映射
 const nodeDescriptions = {
-  tableExtract: '从表格文件中提取指定列的数据',
   textClean: '对文本数据进行清洗、过滤和标准化处理',
 }
 
-// 变量类型级联选择器数据
-const typeOptions = [
-  { value: 'string', label: 'String' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Boolean' },
-  { value: 'object', label: 'Object' },
-  {
-    value: 'array',
-    label: 'Array',
-    children: [
-      { value: 'string', label: 'String' },
-      { value: 'number', label: 'Number' },
-      { value: 'boolean', label: 'Boolean' },
-      { value: 'object', label: 'Object' },
-    ],
-  },
-]
+// 使用变量类型 Store
+const variableTypeStore = useVariableTypeStore()
 
-// 将参数的 type 和 elementType 转换为级联选择器的值
+// 变量类型级联选择器数据（从后端动态获取）
+const typeOptions = computed(() => variableTypeStore.typeOptions)
+
+// 将参数的 type 和 elementType/fileType 转换为级联选择器的值
 const getTypeValue = (param) => {
-  if (!param.type) return ['string']
-  if (param.type === 'array') {
-    return ['array', param.elementType || 'string']
+  if (!param.type) return ['String']
+  if (param.type === 'Array') {
+    return ['Array', param.elementType || 'String']
+  }
+  if (param.type === 'File') {
+    return ['File', param.fileType || 'Txt']
   }
   return [param.type]
 }
@@ -150,13 +197,19 @@ const getTypeValue = (param) => {
 // 处理级联选择器值变化
 const handleTypeChange = (value, row) => {
   if (!value || value.length === 0) {
-    row.type = 'string'
+    row.type = 'String'
     row.elementType = undefined
+    row.fileType = undefined
     return
   }
-  if (value[0] === 'array') {
-    row.type = 'array'
-    row.elementType = value[1] || 'string'
+  if (value[0] === 'Array') {
+    row.type = 'Array'
+    row.elementType = value[1] || 'String'
+    row.fileType = undefined
+  } else if (value[0] === 'File') {
+    row.type = 'File'
+    row.fileType = value[1] || 'Txt'
+    row.elementType = undefined
   } else {
     row.type = value[0]
     row.elementType = undefined
@@ -167,24 +220,10 @@ const handleTypeChange = (value, row) => {
 const iconComponents = {
   VideoPlay,
   CircleCheck,
-  Brush,
   Timer,
   Document,
-  Files,
-  EditPen,
-  ChatDotRound,
-  Picture,
-  Crop,
-  DataLine,
-  Film,
-  Microphone,
-  DocumentAdd,
-  Monitor,
   Connection,
-  Cpu,
   DataAnalysis,
-  Stopwatch,
-  TrendCharts,
 }
 
 // 节点列表
@@ -274,6 +313,21 @@ const connections = ref([
   { id: 'conn-6', sourceId: 'judgeModel-1', sourcePort: 'out-jm-1', targetId: 'end-1', targetPort: 'in-1', sourceParamIndex: 0, targetParamIndex: 0 },
 ])
 
+// 关联线（循环节点与循环体画布之间的虚线关联）
+const associations = ref([])
+
+// 获取循环体画布节点
+const getLoopBodyNodes = computed(() => {
+  return nodes.value.filter((n) => n.type === 'loopBodyCanvas')
+})
+
+// 使用 useAssociations composable
+const { getAssociationPath, createAssociation, deleteAssociation, getLoopBodyIdByLoopId } =
+  useAssociations(associations, nodes, getLoopBodyNodes)
+
+// 使用 useNodeParams composable 获取节点参数函数
+const { formatParamType, getNodeInputParams, getNodeOutputParams } = useNodeParams()
+
 // 选中的节点
 const selectedNode = ref(null)
 
@@ -316,7 +370,10 @@ const longPressState = reactive({
   startY: 0,
   node: null,
   port: null,
+  hasTriggeredDrag: false, // 标记是否真正触发了拖拽（长按计时器执行）
 })
+
+// 关闭添加节点弹窗
 
 // 画布引用
 const canvasRef = ref(null)
@@ -346,7 +403,8 @@ const getActionBtnDomPosition = (nodeId) => {
   const nodeElement = document.querySelector(`[data-node-id="${nodeId}"]`)
   if (!nodeElement) return null
 
-  const btnElement = nodeElement.querySelector('.node-action-btn')
+  // 开始节点使用 node-start-action-btn 类
+  const btnElement = nodeElement.querySelector('.node-start-action-btn')
   if (!btnElement) return null
 
   const btnRect = btnElement.getBoundingClientRect()
@@ -409,10 +467,10 @@ const getConnectionPath = (connection) => {
   } else {
     // 回退到计算位置
     const nodeWidth = 220
-    // 计算起点：开始节点使用添加按钮位置（right: -14px, width: 18px, center: -5px）
+    // 计算起点：开始节点使用添加按钮位置（right: -6px, width: 12px, center: 0）
     // 其他节点使用节点右侧边缘
     if (sourceNode.type === 'start') {
-      x1 = sourceNode.x + nodeWidth - 5 // 添加按钮中心位置
+      x1 = sourceNode.x + nodeWidth // 添加按钮中心位置（在节点右边框上）
       // 开始节点的 Y 位置：节点垂直居中
       const params = getNodeOutputParams(sourceNode)
       const paramsHeight = params.length > 0 ? 32 : 0
@@ -458,9 +516,9 @@ const getConnectionMidpoint = (connection) => {
   } else {
     // 回退到计算位置
     const nodeWidth = 220
-    // 计算起点：开始节点使用添加按钮位置
+    // 计算起点：开始节点使用添加按钮位置（right: -6px, width: 12px, center: 0）
     if (sourceNode.type === 'start') {
-      x1 = sourceNode.x + nodeWidth - 5
+      x1 = sourceNode.x + nodeWidth
       const params = getNodeOutputParams(sourceNode)
       const paramsHeight = params.length > 0 ? 32 : 0
       const nodeHeight = 40 + paramsHeight
@@ -528,9 +586,9 @@ const getConnectionPathPart = (connection, part) => {
   } else {
     // 回退到计算位置
     const nodeWidth = 220
-    // 计算起点：开始节点使用添加按钮位置
+    // 计算起点：开始节点使用添加按钮位置（right: -6px, width: 12px, center: 0）
     if (sourceNode.type === 'start') {
-      x1 = sourceNode.x + nodeWidth - 5
+      x1 = sourceNode.x + nodeWidth
       const params = getNodeOutputParams(sourceNode)
       const paramsHeight = params.length > 0 ? 32 : 0
       const nodeHeight = 40 + paramsHeight
@@ -636,12 +694,57 @@ const getTempConnectionPathPart = (part) => {
 
 // 获取节点类型配置
 const getNodeTypeConfig = (type) => {
-  return nodeTypes.find((t) => t.type === type) || nodeTypes[0]
+  return nodeTypes.value.find((t) => t.type === type) || nodeTypes.value[0]
 }
 
 // 获取图标组件
 const getIconComponent = (iconName) => {
   return iconComponents[iconName]
+}
+
+// 获取可用的数组变量（用于循环节点的 cycle_array 配置）
+const getArrayVariables = () => {
+  const arrayVars = []
+
+  // 遍历所有节点，查找数组类型的输出参数
+  nodes.value.forEach((node) => {
+    if (node.type === 'start') {
+      // 开始节点的输出参数
+      const outputParams = node.outputParams || []
+      outputParams.forEach((param) => {
+        if (param.type === 'Array' || param.type === 'array') {
+          arrayVars.push({
+            label: `${param.name} - ${formatParamType(param)} (${node.name})`,
+            value: `${node.id}.${param.name}`,
+          })
+        }
+      })
+    } else if (node.type === 'loop') {
+      // 循环节点的输出参数中可能有数组
+      const outputParams = node.outputParams || []
+      outputParams.forEach((param) => {
+        if (param.type === 'Array' || param.type === 'array') {
+          arrayVars.push({
+            label: `${param.name} - ${formatParamType(param)} (${node.name})`,
+            value: `${node.id}.${param.name}`,
+          })
+        }
+      })
+    } else {
+      // 其他节点的输出参数
+      const outputParams = getNodeOutputParams(node)
+      outputParams.forEach((param) => {
+        if (param.type === 'Array' || param.type === 'array' || param.type?.includes('Array')) {
+          arrayVars.push({
+            label: `${param.name} - ${formatParamType(param)} (${node.name})`,
+            value: `${node.id}.${param.name}`,
+          })
+        }
+      })
+    }
+  })
+
+  return arrayVars
 }
 
 // 缩放画布
@@ -750,8 +853,8 @@ const addNode = (type) => {
     id: `${type}-${Date.now()}`,
     type,
     name: typeConfig.name,
-    x: 200 + Math.random() * 200,
-    y: 200 + Math.random() * 200,
+    x: 200 + Math.random() * 300,
+    y: 250 + Math.random() * 150,
     inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
     outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
     config: {},
@@ -763,6 +866,132 @@ const addNode = (type) => {
     newNode.inputParams = []
   } else if (type === 'end') {
     newNode.outputs = []
+  }
+
+  // 循环节点特殊处理：自动创建循环体画布和关联线
+  if (type === 'loop') {
+    newNode.inputParams = [
+      { name: 'times', type: 'Integer', required: false },
+      { name: 'cycle_array', type: 'Array', required: false },
+    ]
+    newNode.outputParams = [
+      { name: 'current_item', type: 'Any' },
+      { name: 'current_index', type: 'Number' },
+    ]
+    newNode.config = {
+      times: null,
+      cycle_array: null,
+    }
+
+    // 创建循环体画布节点
+    const loopBodyCanvas = {
+      id: `loopBody-${newNode.id}`,
+      type: 'loopBodyCanvas',
+      name: '循环体',
+      x: newNode.x,
+      y: newNode.y + 200,
+      width: 500,
+      height: 400,
+      belongsTo: newNode.id,
+      loopBody: {
+        canvas: { scale: 1, offsetX: 0, offsetY: 0 },
+        nodes: [
+          {
+            id: `apiAuto-${Date.now()}`,
+            type: 'apiAuto',
+            name: 'HTTPS/HTTP接口调用',
+            x: 200,
+            y: 150,
+            inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
+            outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
+            inputParams: [
+              {
+                name: 'request_url',
+                type: 'String',
+                required: true,
+                value: '',
+                placeholder: '请输入请求URL',
+                elementType: 'string'
+              },
+              {
+                name: 'request_method',
+                type: 'String',
+                required: true,
+                value: 'GET',
+                placeholder: '请选择请求方法',
+                elementType: 'select',
+                options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+              },
+              {
+                name: 'request_headers',
+                type: 'Object',
+                required: false,
+                value: '{}',
+                placeholder: '请输入请求头JSON格式',
+                elementType: 'json'
+              },
+              {
+                name: 'request_body',
+                type: 'String',
+                required: false,
+                value: '',
+                placeholder: '请输入请求体',
+                elementType: 'textarea'
+              },
+              {
+                name: 'response_output',
+                type: 'String',
+                required: false,
+                value: 'response',
+                placeholder: '响应输出变量名',
+                elementType: 'string'
+              }
+            ],
+            outputParams: [
+              { name: 'response', type: 'String' },
+              { name: 'status', type: 'Number' }
+            ],
+            config: {}
+          }
+        ],
+        connections: [
+          {
+            id: `conn-loop-body-${Date.now()}-1`,
+            sourceId: 'port-left',
+            sourcePort: 'out',
+            targetId: `apiAuto-${Date.now()}`,
+            targetPort: 'in',
+            config: {}
+          },
+          {
+            id: `conn-loop-body-${Date.now()}-2`,
+            sourceId: `apiAuto-${Date.now()}`,
+            sourcePort: 'out',
+            targetId: 'port-right',
+            targetPort: 'in',
+            config: {}
+          }
+        ],
+        leftPort: {
+          id: 'port-left',
+          name: '输入',
+          type: 'input',
+          y: 200,
+          params: [],
+        },
+        rightPort: {
+          id: 'port-right',
+          name: '输出',
+          type: 'output',
+          y: 200,
+          params: [],
+        },
+      },
+    }
+    nodes.value.push(loopBodyCanvas)
+
+    // 创建关联线
+    createAssociation(newNode.id, loopBodyCanvas.id)
   }
 
   nodes.value.push(newNode)
@@ -793,6 +1022,7 @@ const aiChatMessages = ref([
 const aiChatInput = ref('')
 const aiChatIsTyping = ref(false)
 const aiChatMessagesRef = ref(null)
+const aiChatConversationId = ref(null)
 
 // 切换AI聊天框展开/折叠
 const toggleAiChat = () => {
@@ -809,7 +1039,7 @@ const aiReplies = [
   '明白了，让我帮你处理这个需求。',
 ]
 
-// 发送AI消息
+// 发送AI消息（流式）
 const sendAiMessage = async () => {
   const content = aiChatInput.value.trim()
   if (!content) return
@@ -826,20 +1056,69 @@ const sendAiMessage = async () => {
   await nextTick()
   scrollAiChatToBottom()
 
+  // 创建AI消息占位符
+  const aiMessageId = Date.now() + 1
+  const aiMessage = {
+    id: aiMessageId,
+    type: 'ai',
+    content: '',
+    time: new Date(),
+    isStreaming: true,
+  }
+  aiChatMessages.value.push(aiMessage)
+
   aiChatIsTyping.value = true
 
-  setTimeout(async () => {
+  try {
+    // 使用流式API
+    await sendMessageStream(
+      {
+        conversationId: aiChatConversationId.value,
+        message: content,
+        context: { source: 'workflow-editor' },
+      },
+      {
+        onChunk: (data) => {
+          if (data.type === 'start') {
+            aiChatConversationId.value = data.conversationId
+          } else if (data.type === 'chunk') {
+            // 找到AI消息并追加内容
+            const msg = aiChatMessages.value.find(m => m.id === aiMessageId)
+            if (msg) {
+              msg.content += data.content
+              scrollAiChatToBottom()
+            }
+          }
+        },
+        onDone: (data) => {
+          aiChatIsTyping.value = false
+          const msg = aiChatMessages.value.find(m => m.id === aiMessageId)
+          if (msg) {
+            msg.isStreaming = false
+            msg.messageUuid = data.messageUuid
+          }
+          nextTick(() => scrollAiChatToBottom())
+        },
+        onError: (error) => {
+          aiChatIsTyping.value = false
+          const msg = aiChatMessages.value.find(m => m.id === aiMessageId)
+          if (msg) {
+            msg.content = error || '抱歉，服务暂时不可用'
+            msg.isStreaming = false
+          }
+          nextTick(() => scrollAiChatToBottom())
+        },
+      }
+    )
+  } catch (error) {
     aiChatIsTyping.value = false
-    const aiMessage = {
-      id: Date.now() + 1,
-      type: 'ai',
-      content: aiReplies[Math.floor(Math.random() * aiReplies.length)],
-      time: new Date(),
+    const msg = aiChatMessages.value.find(m => m.id === aiMessageId)
+    if (msg) {
+      msg.content = aiReplies[Math.floor(Math.random() * aiReplies.length)]
+      msg.isStreaming = false
     }
-    aiChatMessages.value.push(aiMessage)
-    await nextTick()
-    scrollAiChatToBottom()
-  }, 1000 + Math.random() * 1000)
+    nextTick(() => scrollAiChatToBottom())
+  }
 }
 
 // 滚动AI聊天到底部
@@ -856,8 +1135,20 @@ const formatAiChatTime = (date) => {
   return `${hours}:${minutes}`
 }
 
+// 渲染Markdown内容
+const renderMarkdown = (content) => {
+  if (!content) return ''
+  try {
+    return marked(content)
+  } catch (e) {
+    return content
+  }
+}
+
 // 清空AI聊天记录
 const clearAiChat = () => {
+  // 重置对话ID
+  aiChatConversationId.value = null
   aiChatMessages.value = [
     {
       id: Date.now(),
@@ -1238,6 +1529,27 @@ const deleteSelectedNode = () => {
   if (!selectedNode.value) return
 
   const nodeId = selectedNode.value.id
+
+  // 如果是循环节点，删除关联的循环体画布和关联线
+  if (selectedNode.value.type === 'loop') {
+    const loopBodyId = getLoopBodyIdByLoopId(nodeId)
+    if (loopBodyId) {
+      // 删除循环体画布节点
+      nodes.value = nodes.value.filter((n) => n.id !== loopBodyId)
+      // 删除关联线
+      associations.value = associations.value.filter((a) => a.sourceId !== nodeId)
+    }
+  }
+
+  // 如果是循环体画布节点，删除关联线和关联的循环节点
+  if (selectedNode.value.type === 'loopBodyCanvas') {
+    const loopId = selectedNode.value.belongsTo
+    if (loopId) {
+      // 删除关联线
+      associations.value = associations.value.filter((a) => a.targetId !== nodeId)
+    }
+  }
+
   nodes.value = nodes.value.filter((n) => n.id !== nodeId)
   connections.value = connections.value.filter(
     (c) => c.sourceId !== nodeId && c.targetId !== nodeId
@@ -1358,260 +1670,6 @@ const getAvailableVariables = () => {
     name: param.name,
     type: param.type,
   }))
-}
-
-// 格式化参数类型显示（数组类型显示元素类型）
-const formatParamType = (param) => {
-  if (!param.type) return 'String'
-  if (param.type === 'array' && param.elementType) {
-    const elementTypes = {
-      string: 'String',
-      number: 'Number',
-      boolean: 'Boolean',
-      object: 'Object',
-    }
-    return `Array[${elementTypes[param.elementType] || 'String'}]`
-  }
-  // 首字母大写
-  return param.type.charAt(0).toUpperCase() + param.type.slice(1)
-}
-
-// 获取节点的输入参数（用于在节点方框中显示）
-const getNodeInputParams = (node) => {
-  if (!node) return []
-
-  // 开始节点：输入参数与输出参数相同
-  if (node.type === 'start') {
-    const outputParams = node.outputParams || []
-    if (outputParams.length === 0) {
-      return [{ name: '-', type: '-', isPlaceholder: true }]
-    }
-    return outputParams.map((param) => ({
-      name: param.name || '',
-      type: formatParamType(param),
-    }))
-  }
-
-  // 表格提取节点：输入参数
-  if (node.type === 'tableExtract') {
-    return [
-      {
-        name: 'file',
-        type: 'File',
-        required: true,
-        description: '需要提取数据的表格文件',
-      },
-    ]
-  }
-
-  // 文本清洗节点：输入参数
-  if (node.type === 'textClean') {
-    return [
-      {
-        name: 'input_file',
-        type: 'File',
-        required: true,
-        description: '需要被清洗的目标xlsx文件',
-      },
-      {
-        name: 'cols',
-        type: 'String',
-        required: true,
-        description: '指定xlsx文件中需要清洗的列（英文逗号分隔）',
-      },
-      {
-        name: 'remove_extra_spaces',
-        type: 'Boolean',
-        required: false,
-        description: '是否去除多余空格',
-      },
-      {
-        name: 'remove_html_tags',
-        type: 'Boolean',
-        required: false,
-        description: '是否去除HTML标签',
-      },
-      {
-        name: 'remove_special_chars',
-        type: 'Boolean',
-        required: false,
-        description: '是否去除特殊字符',
-      },
-      {
-        name: 'standardized_newline_char',
-        type: 'Boolean',
-        required: false,
-        description: '是否标准化换行符',
-      },
-      {
-        name: 'trim_front_back',
-        type: 'Boolean',
-        required: false,
-        description: '是否去除首尾空白',
-      },
-    ]
-  }
-
-  // 条件判断节点：从变量配置获取
-  if (node.type === 'condition') {
-    const variables = new Set()
-    if (node.config?.branches) {
-      node.config.branches.forEach((branch) => {
-        branch.conditions?.forEach((cond) => {
-          if (cond.variable) {
-            variables.add(cond.variable)
-          }
-        })
-      })
-    }
-    return Array.from(variables).map((v) => ({
-      name: v,
-      type: 'Any',
-    }))
-  }
-
-  // 其他节点：默认输入参数
-  return [{ name: 'input', type: 'Any' }]
-}
-
-// 获取节点的输出参数（用于在节点方框中显示）
-const getNodeOutputParams = (node) => {
-  if (!node) return []
-
-  // 开始节点：从 outputParams 配置读取
-  if (node.type === 'start') {
-    const outputParams = node.outputParams || []
-    if (outputParams.length === 0) {
-      // 没有定义输出参数时，显示占位符
-      return [{ name: '-', type: '-', isPlaceholder: true }]
-    }
-    return outputParams.map((param) => ({
-      name: param.name || '',
-      type: formatParamType(param),
-    }))
-  }
-
-  // 结束节点：输出参数与输入参数相同
-  if (node.type === 'end') {
-    const inputParams = getNodeInputParams(node)
-    if (inputParams.length === 0) {
-      return [{ name: '-', type: '-', isPlaceholder: true }]
-    }
-    return inputParams
-  }
-
-  // 表格提取节点：从 outputParams 配置读取（支持用户增减）
-  if (node.type === 'tableExtract') {
-    const outputParams = node.outputParams || []
-    if (outputParams.length === 0) {
-      return [{ name: '-', type: '-', isPlaceholder: true }]
-    }
-    return outputParams.map((param) => ({
-      name: param.name || '',
-      type: 'String',
-    }))
-  }
-
-  // 文本清洗节点：输出参数为 output_file
-  if (node.type === 'textClean') {
-    return [
-      {
-        name: 'output_file',
-        type: 'File',
-        description: '被清洗之后的xlsx文件',
-      },
-    ]
-  }
-
-  // 条件判断节点：输出布尔值
-  if (node.type === 'condition') {
-    return [{ name: 'result', type: 'Boolean' }]
-  }
-
-  // AI自动化节点
-  if (node.type === 'aiAuto') {
-    return [
-      { name: 'response', type: 'String' },
-      { name: 'tokens', type: 'Number' },
-    ]
-  }
-
-  // HTTPS/HTTP接口调用节点
-  if (node.type === 'apiAuto') {
-    const responseValue = node.config?.responseValue
-    // 尝试解析response是否为JSON结构
-    if (responseValue && typeof responseValue === 'string' && responseValue.trim()) {
-      try {
-        const parsed = JSON.parse(responseValue.trim())
-        if (typeof parsed === 'object' && parsed !== null) {
-          // 根据JSON结构生成输出变量
-          const outputs = []
-          const flattenObject = (obj, prefix = '') => {
-            for (const key in obj) {
-              const varName = prefix ? `${prefix}.${key}` : key
-              const value = obj[key]
-              if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-                flattenObject(value, varName)
-              } else {
-                let varType = 'String'
-                if (typeof value === 'number') varType = 'Number'
-                else if (typeof value === 'boolean') varType = 'Boolean'
-                else if (Array.isArray(value)) varType = 'Array'
-                outputs.push({ name: varName, type: varType })
-              }
-            }
-          }
-          flattenObject(parsed)
-          if (outputs.length > 0) {
-            return outputs
-          }
-        }
-      } catch (e) {
-        // 不是有效的JSON，返回默认的response变量
-      }
-    }
-    // 默认返回response和statusCode
-    return [
-      { name: 'response', type: 'String' },
-      { name: 'statusCode', type: 'Number' },
-    ]
-  }
-
-  // 文本生成节点
-  if (node.type === 'textGenerate') {
-    return [{ name: 'text', type: 'String' }]
-  }
-
-  // 图像生成节点
-  if (node.type === 'imageGenerate') {
-    return [{ name: 'imageUrl', type: 'String' }]
-  }
-
-  // 音频转文本节点
-  if (node.type === 'audioToText') {
-    return [{ name: 'text', type: 'String' }]
-  }
-
-  // 裁判模型节点
-  if (node.type === 'judgeModel') {
-    return [
-      { name: 'score', type: 'Number' },
-      { name: 'reason', type: 'String' },
-    ]
-  }
-
-  // 时延相关节点
-  if (['firstTokenLatency', 'tokenOutputTime', 'e2eLatency'].includes(node.type)) {
-    return [{ name: 'latency', type: 'Number' }]
-  }
-
-  // 报告生成节点
-  if (node.type === 'reportGenerate') {
-    return [{ name: 'reportUrl', type: 'String' }]
-  }
-
-  // 默认情况下显示占位输出参数
-  return [{ name: '-', type: '-', isPlaceholder: true }]
 }
 
 // 获取HTTPS/HTTP接口调用节点的输出参数（用于配置面板显示）
@@ -1922,7 +1980,9 @@ const getOutputFormatPreview = () => {
 // 显示添加节点弹窗
 const showAddPopover = (node, event) => {
   event.stopPropagation()
-  if (node.outputs.length === 0) {
+  // 开始节点使用 outputParams 判断，其他节点使用 outputs 判断
+  const outputCount = node.type === 'start' ? (node.outputParams?.length || 0) : node.outputs.length
+  if (outputCount === 0) {
     return
   }
   showAddNodePopover.value = node.id
@@ -1941,16 +2001,22 @@ const handleActionBtnDown = (node, event) => {
   if (outputParams.length === 0) return
 
   const port = outputParams[0]
-  const nodeWidth = 220
-  // 根据节点内容计算实际高度
-  const params = getNodeOutputParams(node)
-  const paramsHeight = params.length > 0 ? 32 : 0
-  const nodeHeight = 40 + paramsHeight // header 40px + 参数区域
 
-  // 计算起点位置 - 与添加按钮中心重合
-  // 添加按钮 CSS: right: -14px, width: 18px, center = nodeWidth - 14 + 9 = nodeWidth - 5
-  const x = node.x + nodeWidth - 5
-  const y = node.y + nodeHeight / 2
+  // 获取按钮的实际 DOM 位置，确保连线起点与按钮中心一致
+  const btnPosition = getActionBtnDomPosition(node.id)
+  let x, y
+  if (btnPosition) {
+    x = btnPosition.x
+    y = btnPosition.y
+  } else {
+    // 降级方案：使用估算值（与按钮 CSS 一致）
+    const nodeWidth = 220
+    const params = getNodeOutputParams(node)
+    const paramsHeight = params.length > 0 ? 32 : 0
+    const nodeHeight = 40 + paramsHeight
+    x = node.x + nodeWidth
+    y = node.y + nodeHeight / 2
+  }
 
   longPressState.isLongPress = false
   longPressState.startTime = Date.now()
@@ -1962,6 +2028,7 @@ const handleActionBtnDown = (node, event) => {
   // 设置长按计时器
   longPressState.timer = setTimeout(() => {
     longPressState.isLongPress = true
+    longPressState.hasTriggeredDrag = true
 
     // 开始绘制连线
     drawingConnection.value = {
@@ -1975,32 +2042,38 @@ const handleActionBtnDown = (node, event) => {
     }
 
     document.addEventListener('mousemove', onDrawingConnection)
-    document.addEventListener('mouseup', stopConnection)
+    // 使用捕获模式确保 stopConnection 会被调用
+    document.addEventListener('mouseup', stopConnection, { capture: true })
+
+    // 禁用文本选择，防止拖拽过程中文字被选中
+    document.body.style.userSelect = 'none'
   }, LONG_PRESS_THRESHOLD)
-}
-
-// 处理按钮释放
-const handleActionBtnUp = (node, event) => {
-  event.stopPropagation()
-
-  // 清除长按计时器
-  if (longPressState.timer) {
-    clearTimeout(longPressState.timer)
-    longPressState.timer = null
-  }
-
-  // 如果不是长按，则显示添加节点弹窗
-  if (!longPressState.isLongPress) {
-    showAddPopover(node, event)
-  }
-
-  longPressState.isLongPress = false
 }
 
 // 关闭添加节点弹窗
 const closeAddPopover = () => {
   showAddNodePopover.value = null
   insertConnection.value = null
+}
+
+// 处理按钮释放
+const handleActionBtnUp = (node, event) => {
+  // 清除长按计时器
+  const wasShortPress = longPressState.timer !== null
+  if (longPressState.timer) {
+    clearTimeout(longPressState.timer)
+    longPressState.timer = null
+  }
+
+  // 只有短按才在按钮释放时显示弹窗（长按拖拽由 stopConnection 处理）
+  if (wasShortPress && !longPressState.hasTriggeredDrag) {
+    showAddPopover(node, event)
+  }
+
+  // 只有在未触发拖拽的情况下才重置状态（长按拖拽由 stopConnection 重置）
+  if (!longPressState.hasTriggeredDrag) {
+    longPressState.isLongPress = false
+  }
 }
 
 // 从连线中间显示添加节点弹窗
@@ -2060,6 +2133,132 @@ const addConnectedNode = (type) => {
       { id: 'out-branch-0', name: '分支1' },
       { id: 'out-default', name: '默认' },
     ]
+  }
+
+  // 循环节点特殊处理：自动创建循环体画布和关联线
+  if (type === 'loop') {
+    newNode.inputParams = [
+      { name: 'times', type: 'Integer', required: false },
+      { name: 'cycle_array', type: 'Array', required: false },
+    ]
+    newNode.outputParams = [
+      { name: 'current_item', type: 'Any' },
+      { name: 'current_index', type: 'Number' },
+    ]
+    newNode.config = {
+      times: null,
+      cycle_array: null,
+    }
+
+    // 创建循环体画布节点
+    const loopBodyCanvas = {
+      id: `loopBody-${newNode.id}`,
+      type: 'loopBodyCanvas',
+      name: '循环体',
+      x: newNode.x,
+      y: newNode.y + 200,
+      width: 500,
+      height: 400,
+      belongsTo: newNode.id,
+      loopBody: {
+        canvas: { scale: 1, offsetX: 0, offsetY: 0 },
+        nodes: [
+          {
+            id: `apiAuto-${Date.now()}`,
+            type: 'apiAuto',
+            name: 'HTTPS/HTTP接口调用',
+            x: 200,
+            y: 150,
+            inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
+            outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
+            inputParams: [
+              {
+                name: 'request_url',
+                type: 'String',
+                required: true,
+                value: '',
+                placeholder: '请输入请求URL',
+                elementType: 'string'
+              },
+              {
+                name: 'request_method',
+                type: 'String',
+                required: true,
+                value: 'GET',
+                placeholder: '请选择请求方法',
+                elementType: 'select',
+                options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+              },
+              {
+                name: 'request_headers',
+                type: 'Object',
+                required: false,
+                value: '{}',
+                placeholder: '请输入请求头JSON格式',
+                elementType: 'json'
+              },
+              {
+                name: 'request_body',
+                type: 'String',
+                required: false,
+                value: '',
+                placeholder: '请输入请求体',
+                elementType: 'textarea'
+              },
+              {
+                name: 'response_output',
+                type: 'String',
+                required: false,
+                value: 'response',
+                placeholder: '响应输出变量名',
+                elementType: 'string'
+              }
+            ],
+            outputParams: [
+              { name: 'response', type: 'String' },
+              { name: 'status', type: 'Number' }
+            ],
+            config: {}
+          }
+        ],
+        connections: [
+          {
+            id: `conn-loop-body-${Date.now()}-1`,
+            sourceId: 'port-left',
+            sourcePort: 'out',
+            targetId: `apiAuto-${Date.now()}`,
+            targetPort: 'in',
+            config: {}
+          },
+          {
+            id: `conn-loop-body-${Date.now()}-2`,
+            sourceId: `apiAuto-${Date.now()}`,
+            sourcePort: 'out',
+            targetId: 'port-right',
+            targetPort: 'in',
+            config: {}
+          }
+        ],
+        leftPort: {
+          id: 'port-left',
+          name: '输入',
+          type: 'input',
+          y: 200,
+          params: [],
+        },
+        rightPort: {
+          id: 'port-right',
+          name: '输出',
+          type: 'output',
+          y: 200,
+          params: [],
+        },
+      },
+    }
+    nodes.value.push(loopBodyCanvas)
+
+    // 创建关联线
+    createAssociation(newNode.id, loopBodyCanvas.id)
   }
 
   nodes.value.push(newNode)
@@ -2133,6 +2332,9 @@ const startDragNode = (node, event) => {
 
   document.addEventListener('mousemove', onDragNode)
   document.addEventListener('mouseup', stopDragNode)
+
+  // 禁用文本选择，防止拖拽过程中文字被选中
+  document.body.style.userSelect = 'none'
 }
 
 // 拖拽节点
@@ -2152,6 +2354,64 @@ const stopDragNode = () => {
   dragState.node = null
   document.removeEventListener('mousemove', onDragNode)
   document.removeEventListener('mouseup', stopDragNode)
+
+  // 恢复文本选择
+  document.body.style.userSelect = ''
+}
+
+// 循环体画布拖拽状态
+const loopBodyDragState = reactive({
+  isDragging: false,
+  node: null,
+  startX: 0,
+  startY: 0,
+  offsetX: 0,
+  offsetY: 0,
+})
+
+// 开始拖拽循环体画布
+const startDragLoopBodyCanvas = (event, loopBodyNode) => {
+  if (!event || !loopBodyNode) return
+
+  loopBodyDragState.isDragging = true
+  loopBodyDragState.node = loopBodyNode
+  loopBodyDragState.startX = event.clientX
+  loopBodyDragState.startY = event.clientY
+  loopBodyDragState.offsetX = loopBodyNode.x
+  loopBodyDragState.offsetY = loopBodyNode.y
+
+  document.addEventListener('mousemove', onDragLoopBodyCanvas)
+  document.addEventListener('mouseup', stopDragLoopBodyCanvas)
+
+  // 禁用文本选择，防止拖拽过程中文字被选中
+  document.body.style.userSelect = 'none'
+}
+
+// 拖拽循环体画布
+const onDragLoopBodyCanvas = (event) => {
+  if (!loopBodyDragState.isDragging || !loopBodyDragState.node) return
+
+  const dx = (event.clientX - loopBodyDragState.startX) / canvas.scale
+  const dy = (event.clientY - loopBodyDragState.startY) / canvas.scale
+
+  loopBodyDragState.node.x = loopBodyDragState.offsetX + dx
+  loopBodyDragState.node.y = loopBodyDragState.offsetY + dy
+}
+
+// 停止拖拽循环体画布
+const stopDragLoopBodyCanvas = () => {
+  loopBodyDragState.isDragging = false
+  loopBodyDragState.node = null
+  document.removeEventListener('mousemove', onDragLoopBodyCanvas)
+  document.removeEventListener('mouseup', stopDragLoopBodyCanvas)
+
+  // 恢复文本选择
+  document.body.style.userSelect = ''
+}
+
+// 处理循环体内节点选中
+const handleLoopBodyNodeSelect = (node) => {
+  selectedNode.value = node
 }
 
 // 开始拖拽画布
@@ -2169,6 +2429,9 @@ const startDragCanvas = (event) => {
 
   document.addEventListener('mousemove', onDragCanvas)
   document.addEventListener('mouseup', stopDragCanvas)
+
+  // 禁用文本选择，防止拖拽过程中文字被选中
+  document.body.style.userSelect = 'none'
 }
 
 // 拖拽画布
@@ -2187,6 +2450,9 @@ const stopDragCanvas = () => {
   canvasDragState.isDragging = false
   document.removeEventListener('mousemove', onDragCanvas)
   document.removeEventListener('mouseup', stopDragCanvas)
+
+  // 恢复文本选择
+  document.body.style.userSelect = ''
 }
 
 // 开始绘制连线
@@ -2219,6 +2485,9 @@ const startConnection = (node, port, portType, event) => {
 
   document.addEventListener('mousemove', onDrawingConnection)
   document.addEventListener('mouseup', stopConnection)
+
+  // 禁用文本选择，防止拖拽过程中文字被选中
+  document.body.style.userSelect = 'none'
 }
 
 // 绘制连线中
@@ -2232,15 +2501,41 @@ const onDrawingConnection = (event) => {
 
 // 结束连线
 const stopConnection = (event) => {
+  // 使用捕获模式移除监听器
   document.removeEventListener('mousemove', onDrawingConnection)
-  document.removeEventListener('mouseup', stopConnection)
+  document.removeEventListener('mouseup', stopConnection, { capture: true })
+
+  // 恢复文本选择
+  document.body.style.userSelect = ''
+
+  // 如果触发了拖拽（长按计时器执行），则直接显示添加节点弹窗
+  if (longPressState.hasTriggeredDrag) {
+    const node = longPressState.node
+    if (node) {
+      // 使用鼠标释放时的位置显示弹窗
+      const mockEvent = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        stopPropagation: () => {},
+      }
+      showAddPopover(node, mockEvent)
+    }
+
+    // 阻止事件传播，避免 deselectAll 被调用导致弹窗关闭
+    if (event) {
+      event.stopPropagation()
+    }
+  }
+
   drawingConnection.value = null
+  longPressState.isLongPress = false
+  longPressState.hasTriggeredDrag = false
 }
 
 // 在输入端口结束连线
 const endConnection = (targetNode, targetParam, paramIndex, event) => {
   document.removeEventListener('mousemove', onDrawingConnection)
-  document.removeEventListener('mouseup', stopConnection)
+  document.removeEventListener('mouseup', stopConnection, { capture: true })
 
   if (!drawingConnection.value) return
 
@@ -2249,6 +2544,7 @@ const endConnection = (targetNode, targetParam, paramIndex, event) => {
   // 不能连接到自己
   if (sourceNode.id === targetNode.id) {
     drawingConnection.value = null
+    longPressState.isLongPress = false
     return
   }
 
@@ -2359,6 +2655,307 @@ const handleKeydown = (event) => {
 
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
+
+  // 加载变量类型数据
+  variableTypeStore.loadVariableTypes()
+
+  // 加载节点类型数据
+  await loadNodeTypes()
+
+  // 如果是新建工作流，创建默认节点
+  if (route.params.id === 'new') {
+    // 清空现有节点和连接
+    nodes.value = []
+    connections.value = []
+
+    // 硬编码的默认节点数据（用于API调用失败时的回退）
+    const fallbackDefaultNodes = [
+      {
+        id: 'start-1',
+        type: 'start',
+        name: '开始',
+        x: 150,
+        y: 250,
+        inputs: [],
+        outputs: [{ id: 'out-1', name: '输出' }],
+        outputParams: [{ name: 'input', type: 'String', elementType: 'string' }],
+        inputParams: [],
+        config: {}
+      },
+      {
+        id: 'textClean-1',
+        type: 'textClean',
+        name: '文本清洗',
+        x: 400,
+        y: 250,
+        inputs: [{ id: 'in-1', name: '输入' }],
+        outputs: [{ id: 'out-1', name: '输出' }],
+        outputParams: [{ name: 'output_file', type: 'File', elementType: 'file' }],
+        inputParams: [
+          { name: 'input_file', type: 'File', elementType: 'file' },
+          { name: 'cols', type: 'String', elementType: 'string' },
+          { name: 'remove_extra_spaces', type: 'Boolean', elementType: 'boolean', defaultValue: true },
+          { name: 'remove_html_tags', type: 'Boolean', elementType: 'boolean', defaultValue: false },
+          { name: 'remove_special_chars', type: 'Boolean', elementType: 'boolean', defaultValue: false },
+          { name: 'standardized_newline_char', type: 'Boolean', elementType: 'boolean', defaultValue: true },
+          { name: 'trim_front_back', type: 'Boolean', elementType: 'boolean', defaultValue: true }
+        ],
+        config: {
+          input_file: null,
+          cols: '',
+          remove_extra_spaces: true,
+          remove_html_tags: false,
+          remove_special_chars: false,
+          standardized_newline_char: true,
+          trim_front_back: true
+        }
+      },
+      {
+        id: 'loop-1',
+        type: 'loop',
+        name: '循环',
+        x: 650,
+        y: 250,
+        inputs: [{ id: 'in-1', name: '输入' }],
+        outputs: [{ id: 'out-1', name: '输出' }],
+        outputParams: [
+          { name: 'current_item', type: 'Any' },
+          { name: 'current_index', type: 'Number' },
+          { name: 'result', type: 'Any' }
+        ],
+        inputParams: [
+          { name: 'times', type: 'Integer', required: false },
+          { name: 'cycle_array', type: 'Array', required: false },
+        ],
+        config: {
+          times: null,
+          cycle_array: null,
+        }
+      },
+      {
+        id: 'judgeModel-1',
+        type: 'judgeModel',
+        name: '裁判模型',
+        x: 900,
+        y: 250,
+        inputs: [{ id: 'in-1', name: '输入' }],
+        outputs: [{ id: 'out-1', name: '输出' }],
+        outputParams: [
+          { name: 'score', type: 'Number', elementType: 'number' },
+          { name: 'reason', type: 'String', elementType: 'string' }
+        ],
+        inputParams: [{ name: 'input', type: 'Any', elementType: 'any' }],
+        config: {}
+      },
+      {
+        id: 'end-1',
+        type: 'end',
+        name: '结束',
+        x: 1150,
+        y: 250,
+        inputs: [{ id: 'in-1', name: '输入' }],
+        outputs: [],
+        outputParams: [],
+        inputParams: [{ name: 'input', type: 'Any', elementType: 'any' }],
+        config: {}
+      }
+    ]
+
+    // 硬编码的默认连接数据（用于API调用失败时的回退）
+    const fallbackDefaultConnections = [
+      {
+        id: `conn-${Date.now()}`,
+        sourceId: 'start-1',
+        sourcePort: 'out-1',
+        targetId: 'textClean-1',
+        targetPort: 'in-1',
+        config: {}
+      },
+      {
+        id: `conn-${Date.now() + 1}`,
+        sourceId: 'textClean-1',
+        sourcePort: 'out-1',
+        targetId: 'loop-1',
+        targetPort: 'in-1',
+        config: {}
+      },
+      {
+        id: `conn-${Date.now() + 2}`,
+        sourceId: 'loop-1',
+        sourcePort: 'out-1',
+        targetId: 'judgeModel-1',
+        targetPort: 'in-1',
+        config: {}
+      },
+      {
+        id: `conn-${Date.now() + 3}`,
+        sourceId: 'judgeModel-1',
+        sourcePort: 'out-1',
+        targetId: 'end-1',
+        targetPort: 'in-1',
+        config: {}
+      }
+    ]
+
+    // 尝试从后端API获取默认工作流
+    let defaultNodes = []
+    let defaultConnections = []
+    let defaultAssociations = []
+
+    try {
+      const response = await getDefaultWorkflow()
+
+      // 创建节点ID到nodeUuid的映射
+      const nodeIdMap = {}
+      const nodeUuidMap = {} // 反向映射：nodeUuid -> 节点信息
+
+      // 映射后端返回的节点数据到前端格式
+      if (response && response.nodes && Array.isArray(response.nodes)) {
+        // 首先建立ID映射
+        response.nodes.forEach((node) => {
+          nodeIdMap[node.id] = node.nodeUuid
+          nodeUuidMap[node.nodeUuid] = node
+        })
+
+        defaultNodes = response.nodes.map(node => {
+          const nodeConfig = JSON.parse(node.config || '{}')
+          const baseNode = {
+            id: node.nodeUuid,
+            type: node.type,
+            name: node.name,
+            x: node.positionX,
+            y: node.positionY,
+            inputs: JSON.parse(node.inputPorts || '[]'),
+            outputs: JSON.parse(node.outputPorts || '[]'),
+            inputParams: JSON.parse(node.inputParams || '[]'),
+            outputParams: JSON.parse(node.outputParams || '[]'),
+            config: nodeConfig
+          }
+
+          // 如果是循环体节点，添加完整属性
+          if (node.type === 'loopBodyCanvas') {
+            baseNode.width = nodeConfig.width || 500
+            baseNode.height = nodeConfig.height || 400
+            // belongsTo 从 config 中获取，指向循环节点的 nodeUuid
+            if (nodeConfig.belongsTo) {
+              // 找到对应的循环节点UUID
+              const loopNode = response.nodes.find(n => n.id === node.parentNodeId)
+              baseNode.belongsTo = loopNode ? loopNode.nodeUuid : nodeConfig.belongsTo
+            }
+            // 添加循环体内部画布数据
+            baseNode.loopBody = {
+              canvas: { scale: 1, offsetX: 0, offsetY: 0 },
+              nodes: [
+                {
+                  id: 'api-auto-loop-1',
+                  type: 'apiAuto',
+                  name: 'HTTPS/HTTP接口调用',
+                  x: 200,
+                  y: 150,
+                  inputs: [{ id: 'in-1', name: '输入' }],
+                  outputs: [{ id: 'out-1', name: '输出' }],
+                  config: {}
+                }
+              ],
+              connections: [
+                {
+                  id: `conn-loop-body-${Date.now()}-1`,
+                  sourceId: 'port-left',
+                  sourcePort: 'out',
+                  targetId: 'api-auto-loop-1',
+                  targetPort: 'in',
+                  config: {}
+                },
+                {
+                  id: `conn-loop-body-${Date.now()}-2`,
+                  sourceId: 'api-auto-loop-1',
+                  sourcePort: 'out',
+                  targetId: 'port-right',
+                  targetPort: 'in',
+                  config: {}
+                }
+              ],
+              leftPort: {
+                id: 'port-left',
+                name: '输入',
+                type: 'input',
+                y: 200,
+                params: [],
+              },
+              rightPort: {
+                id: 'port-right',
+                name: '输出',
+                type: 'output',
+                y: 200,
+                params: [],
+              },
+            }
+          }
+
+          return baseNode
+        })
+
+        // 映射后端返回的连接数据到前端格式
+        if (response.connections && Array.isArray(response.connections)) {
+          defaultConnections = response.connections.map((conn, index) => ({
+            id: conn.connectionUuid || `conn-${Date.now() + index}`,
+            sourceId: nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
+            sourcePort: conn.sourcePortId,
+            targetId: nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
+            targetPort: conn.targetPortId,
+            config: {}
+          }))
+        }
+
+        // 映射后端返回的关联数据到前端格式
+        if (response.associations && Array.isArray(response.associations)) {
+          defaultAssociations = response.associations.map((assoc, index) => ({
+            id: `assoc-${index}`,
+            sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
+            targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+            associationType: assoc.associationType,
+            config: {}
+          }))
+        }
+      }
+
+      // 如果API返回的数据为空，使用回退数据
+      if (defaultNodes.length === 0) {
+        defaultNodes = fallbackDefaultNodes
+        defaultConnections = fallbackDefaultConnections
+      }
+    } catch (error) {
+      // API调用失败，使用回退数据
+      defaultNodes = fallbackDefaultNodes
+      defaultConnections = fallbackDefaultConnections
+    }
+
+    // 添加节点
+    nodes.value = defaultNodes
+
+    // 创建连接
+    connections.value = defaultConnections
+
+    // 如果后端返回了关联数据，直接使用
+    if (defaultAssociations.length > 0) {
+      associations.value = defaultAssociations
+    } else {
+      // 如果没有关联数据（旧版后端或回退数据），创建默认关联
+      // 查找循环节点和循环体节点
+      const loopNode = defaultNodes.find(n => n.type === 'loop')
+      const loopBodyNode = defaultNodes.find(n => n.type === 'loopBodyCanvas')
+
+      if (loopNode && loopBodyNode) {
+        associations.value.push({
+          id: `assoc-${Date.now()}`,
+          sourceId: loopNode.id,
+          targetId: loopBodyNode.id,
+          config: {}
+        })
+      }
+    }
+  }
+
   // 等待 DOM 准备好后触发连线重新计算
   await nextTick()
   // 通过微调 connections 数组来触发重新渲染
@@ -2545,17 +3142,18 @@ onUnmounted(() => {
                 </div>
                 <!-- 开始节点右侧的添加/连线按钮 -->
                 <div
-                  class="node-action-btn"
+                  class="output-port node-edge-port node-center-port node-start-action-btn"
+                  title="output"
                   @mousedown.stop="handleActionBtnDown(node, $event)"
                   @mouseup.stop="handleActionBtnUp(node, $event)"
+                  @click.stop.prevent
                 >
-                  <el-icon :size="12"><Plus /></el-icon>
                 </div>
               </template>
 
               <!-- 结束节点：单行显示输出参数，左侧有端口 -->
               <template v-else-if="node.type === 'end'">
-                <div class="input-port end-node-port" @mouseup.stop="endConnection(node, null, 0, $event)"></div>
+                <div class="input-port end-node-port" @mousedown.stop.prevent></div>
                 <div
                   v-if="getNodeInputParams(node).length > 0"
                   class="node-params inline-params end-inline-params"
@@ -2575,12 +3173,12 @@ onUnmounted(() => {
               </template>
 
               <!-- 其他节点：分别显示输入和输出参数 -->
-              <template v-else>
+              <template v-else-if="node.type === 'loop'">
                 <!-- 输入端口在节点左侧边缘垂直居中 -->
                 <div
                   class="input-port node-edge-port node-center-port"
                   title="input"
-                  @mouseup.stop="endConnection(node, null, 0, $event)"
+                  @mousedown.stop.prevent
                 ></div>
 
                 <!-- 输入参数：单行显示 -->
@@ -2621,13 +3219,93 @@ onUnmounted(() => {
 
                 <!-- 输出端口在节点右侧边缘垂直居中 -->
                 <div
-                  class="output-port node-edge-port node-center-port"
+                  class="output-port node-edge-port node-center-port node-start-action-btn"
                   title="output"
-                  @mousedown.stop="startConnectionFromOutput(node, null, 0, $event)"
+                  @mousedown.stop="handleActionBtnDown(node, $event)"
+                  @mouseup.stop="handleActionBtnUp(node, $event)"
+                  @click.stop.prevent
+                >
+                </div>
+              </template>
+
+              <!-- 其他节点：分别显示输入和输出参数 -->
+              <template v-else>
+                <!-- 输入端口在节点左侧边缘垂直居中（循环体画布类型不显示） -->
+                <div
+                  v-if="node.type !== 'loopBodyCanvas'"
+                  class="input-port node-edge-port node-center-port"
+                  title="input"
+                  @mousedown.stop.prevent
+                ></div>
+
+                <!-- 输入参数：单行显示 -->
+                <div
+                  v-if="getNodeInputParams(node).length > 0"
+                  class="node-params inline-params input-inline-params"
+                >
+                  <span class="params-label">输入</span>
+                  <span class="params-inline-list">
+                    <span
+                      v-for="(param, idx) in getNodeInputParams(node)"
+                      :key="'in-' + idx"
+                      class="param-inline-item"
+                      :title="param.name + ': ' + param.type"
+                    >
+                      {{ param.name || '新建参数' }}
+                    </span>
+                  </span>
+                </div>
+
+                <!-- 输出参数：单行显示 -->
+                <div
+                  v-if="getNodeOutputParams(node).length > 0"
+                  class="node-params inline-params output-inline-params"
+                >
+                  <span class="params-label">输出</span>
+                  <span class="params-inline-list">
+                    <span
+                      v-for="(param, idx) in getNodeOutputParams(node)"
+                      :key="'out-' + idx"
+                      class="param-inline-item"
+                      :title="param.name + ': ' + param.type"
+                    >
+                      {{ param.name || '新建参数' }}
+                    </span>
+                  </span>
+                </div>
+
+                <!-- 输出端口在节点右侧边缘垂直居中 -->
+                <div
+                  class="output-port node-edge-port node-center-port node-start-action-btn"
+                  title="output"
+                  @mousedown.stop="handleActionBtnDown(node, $event)"
+                  @mouseup.stop="handleActionBtnUp(node, $event)"
+                  @click.stop.prevent
                 ></div>
               </template>
             </div>
           </div>
+
+          <!-- 关联线层（循环节点与循环体画布之间的虚线） -->
+          <svg class="associations-layer" :width="canvas.width" :height="canvas.height">
+            <path
+              v-for="assoc in associations"
+              :key="assoc.id"
+              :d="getAssociationPath(assoc)"
+              class="association-path"
+            />
+          </svg>
+
+          <!-- 循环体画布 -->
+          <LoopBodyCanvas
+            v-for="loopBodyNode in getLoopBodyNodes"
+            :key="loopBodyNode.id"
+            :loop-body-node="loopBodyNode"
+            :loop-node="nodes.find(n => n.id === loopBodyNode.belongsTo)"
+            :node-types="nodeTypes"
+            @canvas-drag-start="startDragLoopBodyCanvas($event, loopBodyNode)"
+            @node-select="handleLoopBodyNodeSelect"
+          />
 
           <!-- 连线层（终点部分 - 在节点上层） -->
           <svg class="connections-layer connections-layer-top" :width="canvas.width" :height="canvas.height">
@@ -2868,13 +3546,30 @@ onUnmounted(() => {
                 <div v-if="message.type === 'ai'" class="ai-message-avatar">
                   <el-icon :size="14"><ChatDotRound /></el-icon>
                 </div>
-                <div class="ai-message-bubble">{{ message.content }}</div>
+                <!-- 流式消息内容为空时显示思考动画 -->
+                <template v-if="message.isStreaming && !message.content">
+                  <div class="ai-message-bubble typing">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                  </div>
+                </template>
+                <!-- 有内容时显示消息气泡 -->
+                <template v-else>
+                  <div
+                    class="ai-message-bubble"
+                    :class="{ 'streaming': message.isStreaming }"
+                    v-html="message.type === 'ai' ? renderMarkdown(message.content) : message.content"
+                  ></div>
+                  <!-- 流式输出光标 -->
+                  <span v-if="message.isStreaming" class="streaming-cursor">|</span>
+                </template>
                 <div v-if="message.type === 'user'" class="ai-message-avatar user">
                   <span>我</span>
                 </div>
               </div>
-              <!-- 正在输入提示 -->
-              <div v-if="aiChatIsTyping" class="ai-message-item ai">
+              <!-- 额外的思考动画（用于非流式场景） -->
+              <div v-if="aiChatIsTyping && !aiChatMessages.some(m => m.isStreaming)" class="ai-message-item ai">
                 <div class="ai-message-avatar">
                   <el-icon :size="14"><ChatDotRound /></el-icon>
                 </div>
@@ -2936,9 +3631,9 @@ onUnmounted(() => {
           <template v-if="selectedNode.type === 'start'">
             <div class="config-item">
               <div class="config-item-header">
-                <label>输出参数</label>
+                <label>初始变量</label>
                 <el-button type="primary" text size="small" :icon="Plus" @click="addOutputParam">
-                  添加参数
+                  添加变量
                 </el-button>
               </div>
               <el-table
@@ -2988,6 +3683,113 @@ onUnmounted(() => {
                   </template>
                 </el-table-column>
               </el-table>
+            </div>
+          </template>
+
+          <!-- 循环节点配置 -->
+          <template v-if="selectedNode.type === 'loop'">
+            <!-- 输入参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输入</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="[
+                    { name: 'times', type: 'Integer', required: false, desc: '循环次数（正整数）', field: 'times' },
+                    { name: 'cycle_array', type: 'Array', required: false, desc: '循环数组（从上游节点选择数组变量）', field: 'cycle_array' }
+                  ]"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="140">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span v-if="row.required" class="required-mark">*</span>
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="100" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="160">
+                    <template #default="{ row }">
+                      <!-- times: 正整数输入框 -->
+                      <div v-if="row.field === 'times'" class="param-value-input">
+                        <el-input-number
+                          v-model="selectedNode.config.times"
+                          :min="1"
+                          :precision="0"
+                          placeholder="循环次数"
+                          size="small"
+                          style="width: 100%"
+                          controls-position="right"
+                        />
+                      </div>
+                      <!-- cycle_array: 下拉选择数组变量 -->
+                      <div v-else-if="row.field === 'cycle_array'" class="param-value-input">
+                        <el-select
+                          v-model="selectedNode.config.cycle_array"
+                          placeholder="选择数组变量"
+                          size="small"
+                          style="width: 100%"
+                          clearable
+                          filterable
+                        >
+                          <el-option
+                            v-for="arrVar in getArrayVariables()"
+                            :key="arrVar.value"
+                            :label="arrVar.label"
+                            :value="arrVar.value"
+                          />
+                        </el-select>
+                      </div>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+
+            <!-- 输出参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输出</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="[
+                    { name: 'current_item', type: 'Any', desc: '当前循环项' },
+                    { name: 'current_index', type: 'Number', desc: '当前循环索引' },
+                    { name: 'result', type: 'Any', desc: '循环结果' }
+                  ]"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="140">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip :content="row.desc" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="100" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
             </div>
           </template>
 
@@ -3227,11 +4029,8 @@ onUnmounted(() => {
                           placeholder="输入或引用参数值"
                           size="small"
                           class="param-input-with-btn"
-                        >
-                          <template #suffix>
-                            <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
-                          </template>
-                        </el-input>
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
                       </div>
                     </template>
                   </el-table-column>
@@ -3430,11 +4229,8 @@ onUnmounted(() => {
                           placeholder="输入或引用参数值"
                           size="small"
                           class="param-input-with-btn"
-                        >
-                          <template #suffix>
-                            <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
-                          </template>
-                        </el-input>
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
                       </div>
                     </template>
                   </el-table-column>
@@ -3646,6 +4442,24 @@ onUnmounted(() => {
   stroke: #6366f1;
   stroke-dasharray: 6, 4;
   opacity: 0.6;
+}
+
+/* 关联线层（循环节点与循环体画布之间的虚线） */
+.associations-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.association-path {
+  fill: none;
+  stroke: #3b82f6;
+  stroke-width: 2;
+  stroke-dasharray: 8, 4;
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 /* 连线中间的添加按钮 */
@@ -3922,16 +4736,12 @@ onUnmounted(() => {
   background: #6366f1;
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
-  cursor: crosshair;
-  transition: all 0.2s;
+  cursor: not-allowed;
+  transition: none;
   z-index: 5;
 }
 
-.input-port:hover {
-  background: #22d3ee;
-  transform: scale(1.2);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.5);
-}
+/* 左侧端口移除悬浮特效，不支持鼠标事件 */
 
 /* 输出端口样式 */
 .output-port {
@@ -3959,6 +4769,19 @@ onUnmounted(() => {
 .output-port-cell {
   position: relative;
   width: 12px;
+}
+
+/* 开始节点右侧的添加/连线按钮 */
+.node-start-action-btn {
+  right: -6px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 悬浮时放大 */
+.flow-node:hover .node-start-action-btn {
+  transform: translateY(-50%) scale(1.2);
 }
 
 /* 结束节点端口样式 */
@@ -4343,33 +5166,51 @@ onUnmounted(() => {
 /* 合并的连线/添加按钮 */
 .node-action-btn {
   position: absolute;
-  right: -14px;
+  right: -4px;
   top: 50%;
   transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: #6366f1;
+  background: #10b981;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.6;
   transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
   z-index: 10;
   user-select: none;
 }
 
+.node-action-btn .el-icon {
+  opacity: 0;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .flow-node:hover .node-action-btn {
+  right: -9px;
+  width: 18px;
+  height: 18px;
+  opacity: 1;
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+
+.flow-node:hover .node-action-btn .el-icon {
   opacity: 1;
 }
 
 .node-action-btn:hover {
-  background: #4f46e5;
+  background: #22d3ee;
   transform: translateY(-50%) scale(1.15);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
 }
 
 .node-action-btn:active {
@@ -4388,15 +5229,11 @@ onUnmounted(() => {
   background: #6366f1;
   border: 2px solid #fff;
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
-  cursor: crosshair;
-  transition: all 0.2s;
+  cursor: not-allowed;
+  transition: none;
 }
 
-.input-port:hover {
-  background: #22d3ee;
-  transform: scale(1.2);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.5);
-}
+/* 左侧端口移除悬浮特效，不支持鼠标事件 */
 
 /* 添加节点弹窗 */
 .add-node-popover {
@@ -4955,6 +5792,81 @@ onUnmounted(() => {
   }
 }
 
+/* 流式输出光标 */
+.streaming-cursor {
+  display: inline-block;
+  animation: blink 1s infinite;
+  color: #6366f1;
+  font-weight: bold;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 流式输出时的消息气泡 */
+.ai-message-bubble.streaming {
+  border-right: 2px solid #6366f1;
+}
+
+/* Markdown 内容样式 */
+.ai-message-item.ai .ai-message-bubble :deep(p) {
+  margin: 0 0 8px 0;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(code) {
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(pre) {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(ul),
+.ai-message-item.ai .ai-message-bubble :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(li) {
+  margin: 4px 0;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(h1),
+.ai-message-item.ai .ai-message-bubble :deep(h2),
+.ai-message-item.ai .ai-message-bubble :deep(h3) {
+  margin: 12px 0 8px 0;
+  font-weight: 600;
+}
+
+.ai-message-item.ai .ai-message-bubble :deep(blockquote) {
+  border-left: 3px solid #6366f1;
+  margin: 8px 0;
+  padding-left: 12px;
+  color: #6b7280;
+}
+
 .ai-chat-input-area {
   display: flex;
   align-items: center;
@@ -5357,6 +6269,11 @@ onUnmounted(() => {
   padding: 10px 0;
 }
 
+/* 级联选择器宽度 */
+.io-table .el-cascader {
+  width: 100%;
+}
+
 .param-name-cell {
   display: flex;
   align-items: center;
@@ -5582,5 +6499,43 @@ onUnmounted(() => {
 
 .param-value-input {
   position: relative;
+}
+</style>
+
+<style>
+/* 级联选择器下拉面板高度调整，避免滚动条 */
+.el-cascader__dropdown.el-popper {
+  overflow: visible !important;
+}
+
+.el-cascader__dropdown .el-cascader-panel {
+  overflow: visible !important;
+}
+
+.el-cascader__dropdown .el-cascader-menu {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+.el-cascader__dropdown .el-cascader-menu__wrap {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+.el-cascader__dropdown .el-cascader-menu__list {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* 隐藏滚动条但保持内容可访问 */
+.el-cascader__dropdown .el-scrollbar__wrap {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+.el-cascader__dropdown .el-scrollbar__view {
+  overflow: visible !important;
 }
 </style>

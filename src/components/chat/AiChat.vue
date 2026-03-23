@@ -2,6 +2,8 @@
 import { ref, nextTick, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ChatDotRound, Close, Position, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { sendMessageStream, getQuickQuestions } from '@/api/chat'
+import { marked } from 'marked'
 
 const props = defineProps({
   visible: {
@@ -21,6 +23,9 @@ const inputMessage = ref('')
 const messagesContainer = ref(null)
 const isTyping = ref(false)
 const showScrollButton = ref(false)
+
+// 当前对话ID
+const currentConversationId = ref(null)
 
 // 拖拽调整高度
 const chatHeight = ref(520)
@@ -53,13 +58,31 @@ const stopDrag = () => {
   document.body.style.cursor = ''
 }
 
-// 预设快捷问题
-const quickQuestions = [
+// 预设快捷问题（默认值，可从后端动态获取）
+const quickQuestions = ref([
   { icon: '💡', text: '如何创建测评集？' },
   { icon: '🔧', text: '环境管理怎么配置？' },
   { icon: '📊', text: '如何查看测试报告？' },
   { icon: '🚀', text: '快速入门指南' },
-]
+])
+
+// 加载快捷问题
+const loadQuickQuestions = async () => {
+  try {
+    const response = await getQuickQuestions()
+    if (response && Array.isArray(response) && response.length > 0) {
+      quickQuestions.value = response.map((item) => ({
+        id: item.id,
+        icon: item.icon || '💡',
+        text: item.text,
+        category: item.category,
+      }))
+    }
+  } catch (error) {
+    // 使用默认快捷问题
+    console.log('使用默认快捷问题')
+  }
+}
 
 // 消息列表
 const messages = ref([
@@ -128,19 +151,79 @@ const sendMessage = async (content = null) => {
   inputMessage.value = ''
   await scrollToBottom()
 
+  // 创建AI消息占位符
+  const aiMessageId = Date.now() + 1
+  const aiMessage = {
+    id: aiMessageId,
+    type: 'ai',
+    content: '',
+    time: new Date(),
+    isStreaming: true,
+  }
+  messages.value.push(aiMessage)
+
   isTyping.value = true
 
-  setTimeout(async () => {
+  try {
+    // 使用流式API
+    await sendMessageStream(
+      {
+        conversationId: currentConversationId.value,
+        message: messageContent,
+        context: { source: 'workflow-editor' },
+      },
+      {
+        onChunk: (data) => {
+          if (data.type === 'start') {
+            currentConversationId.value = data.conversationId
+          } else if (data.type === 'chunk') {
+            // 找到AI消息并追加内容
+            const msg = messages.value.find(m => m.id === aiMessageId)
+            if (msg) {
+              msg.content += data.content
+              scrollToBottom()
+            }
+          }
+        },
+        onDone: (data) => {
+          isTyping.value = false
+          const msg = messages.value.find(m => m.id === aiMessageId)
+          if (msg) {
+            msg.isStreaming = false
+            msg.messageUuid = data.messageUuid
+          }
+          scrollToBottom()
+        },
+        onError: (error) => {
+          isTyping.value = false
+          const msg = messages.value.find(m => m.id === aiMessageId)
+          if (msg) {
+            msg.content = error || '抱歉，服务暂时不可用'
+            msg.isStreaming = false
+          }
+          scrollToBottom()
+        },
+      }
+    )
+  } catch (error) {
     isTyping.value = false
-    const aiMessage = {
-      id: Date.now() + 1,
-      type: 'ai',
-      content: getRandomReply(),
-      time: new Date(),
+    const msg = messages.value.find(m => m.id === aiMessageId)
+    if (msg) {
+      msg.content = getRandomReply()
+      msg.isStreaming = false
     }
-    messages.value.push(aiMessage)
-    await scrollToBottom()
-  }, 1000 + Math.random() * 1000)
+    scrollToBottom()
+  }
+}
+
+// 渲染Markdown内容
+const renderMarkdown = (content) => {
+  if (!content) return ''
+  try {
+    return marked(content)
+  } catch (e) {
+    return content
+  }
 }
 
 // 关闭聊天框
@@ -151,6 +234,8 @@ const handleClose = () => {
 
 // 清空对话
 const clearMessages = () => {
+  // 重置对话ID，下次发送会创建新对话
+  currentConversationId.value = null
   messages.value = [
     {
       id: Date.now(),
@@ -183,6 +268,8 @@ onMounted(() => {
     messagesContainer.value.addEventListener('scroll', checkScrollButton)
   }
   document.addEventListener('keydown', handleEscapeKey)
+  // 加载快捷问题
+  loadQuickQuestions()
 })
 
 onUnmounted(() => {
@@ -272,7 +359,26 @@ watch(isOpen, (val) => {
 
             <!-- 消息内容 -->
             <div class="message-content">
-              <div class="message-bubble">{{ message.content }}</div>
+              <!-- 流式消息内容为空时显示思考动画 -->
+              <template v-if="message.isStreaming && !message.content">
+                <div class="message-bubble typing">
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                </div>
+              </template>
+              <!-- 有内容时显示消息气泡 -->
+              <template v-else>
+                <div
+                  class="message-bubble"
+                  :class="{ 'streaming': message.isStreaming }"
+                  v-html="message.type === 'ai' ? renderMarkdown(message.content) : message.content"
+                ></div>
+                <!-- 流式输出时的光标 -->
+                <div v-if="message.isStreaming" class="streaming-cursor">
+                  <span class="cursor-dot"></span>
+                </div>
+              </template>
               <div class="message-time">{{ formatTime(message.time) }}</div>
             </div>
 
@@ -282,9 +388,9 @@ watch(isOpen, (val) => {
             </div>
           </div>
 
-          <!-- 正在输入提示 -->
+          <!-- 正在输入提示（仅在没有流式消息时显示） -->
           <Transition name="typing">
-            <div v-if="isTyping" class="message-item ai">
+            <div v-if="isTyping && !messages.some(m => m.isStreaming)" class="message-item ai">
               <div class="message-avatar ai">
                 <el-icon :size="16"><ChatDotRound /></el-icon>
               </div>
@@ -702,6 +808,125 @@ watch(isOpen, (val) => {
     transform: translateY(-6px);
     opacity: 1;
   }
+}
+
+/* 流式输出光标 */
+.streaming-cursor {
+  display: inline-block;
+  margin-left: 2px;
+}
+
+.cursor-dot {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background: #6366f1;
+  border-radius: 2px;
+  animation: blink 1s infinite;
+  vertical-align: middle;
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+/* 流式输出时的消息气泡 */
+.message-bubble.streaming {
+  border-right: 2px solid #6366f1;
+}
+
+/* Markdown 内容样式 */
+.message-item.ai .message-bubble :deep(p) {
+  margin: 0 0 8px 0;
+}
+
+.message-item.ai .message-bubble :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-item.ai .message-bubble :deep(code) {
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+.message-item.ai .message-bubble :deep(pre) {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.message-item.ai .message-bubble :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.message-item.ai .message-bubble :deep(ul),
+.message-item.ai .message-bubble :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.message-item.ai .message-bubble :deep(li) {
+  margin: 4px 0;
+}
+
+.message-item.ai .message-bubble :deep(h1),
+.message-item.ai .message-bubble :deep(h2),
+.message-item.ai .message-bubble :deep(h3),
+.message-item.ai .message-bubble :deep(h4) {
+  margin: 12px 0 8px 0;
+  font-weight: 600;
+}
+
+.message-item.ai .message-bubble :deep(h1) { font-size: 18px; }
+.message-item.ai .message-bubble :deep(h2) { font-size: 16px; }
+.message-item.ai .message-bubble :deep(h3) { font-size: 15px; }
+.message-item.ai .message-bubble :deep(h4) { font-size: 14px; }
+
+.message-item.ai .message-bubble :deep(blockquote) {
+  border-left: 3px solid #6366f1;
+  margin: 8px 0;
+  padding-left: 12px;
+  color: #6b7280;
+}
+
+.message-item.ai .message-bubble :deep(a) {
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.message-item.ai .message-bubble :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.message-item.ai .message-bubble :deep(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.message-item.ai .message-bubble :deep(th),
+.message-item.ai .message-bubble :deep(td) {
+  border: 1px solid #e5e7eb;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.message-item.ai .message-bubble :deep(th) {
+  background: #f9fafb;
+  font-weight: 600;
 }
 
 /* 滚动到底部按钮 */
