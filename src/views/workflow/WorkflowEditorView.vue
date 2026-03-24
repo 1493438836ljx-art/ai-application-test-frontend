@@ -28,16 +28,20 @@ import {
   QuestionFilled,
   ArrowUp,
   ArrowDown,
+  ArrowRight,
   Position,
+  Loading,
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/chat/AiChat.vue'
 import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
+import JsonTreeView from '@/components/workflow/JsonTreeView.vue'
 import { useAssociations } from './composables/useAssociations'
-import { useNodeParams } from './composables/useNodeParams'
+import { useNodeParams, flattenJsonTree, getNodeOutputParams } from './composables/useNodeParams'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
 import { getDefaultWorkflow } from '@/api/workflow.js'
 import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
+import { getDictionaryColumnsByName } from '@/api/dictionary.js'
 import { marked } from 'marked'
 
 const route = useRoute()
@@ -375,7 +379,7 @@ const { getAssociationPath, createAssociation, deleteAssociation, getLoopBodyIdB
   useAssociations(associations, nodes, getLoopBodyNodes)
 
 // 使用 useNodeParams composable 获取节点参数函数
-const { formatParamType, getNodeInputParams, getNodeOutputParams } = useNodeParams()
+const { formatParamType, getNodeInputParams } = useNodeParams()
 
 // 选中的节点
 const selectedNode = ref(null)
@@ -915,6 +919,7 @@ const addNode = (type) => {
     newNode.inputParams = []
   } else if (type === 'end') {
     newNode.outputs = []
+    newNode.config.inputParams = []
   }
 
   // 循环节点特殊处理：自动创建循环体画布和关联线
@@ -1815,23 +1820,59 @@ const getLoopBodyNodeOutputs = () => {
     (n) => n.type === 'loopBodyCanvas' && n.belongsTo === selectedNode.value.id
   )
 
-  if (loopBodyCanvasNode && loopBodyCanvasNode.loopBody && loopBodyCanvasNode.loopBody.nodes) {
-    const loopBodyNodes = loopBodyCanvasNode.loopBody.nodes
+  if (loopBodyCanvasNode) {
+    // 优��从组件引用获取最新的 bodyNodes（包含实时编辑的数据）
+    const canvasRef = loopBodyCanvasRefs.value[loopBodyCanvasNode.id]
+    let loopBodyNodes = []
+
+    if (canvasRef && canvasRef.bodyNodes) {
+      // 从组件引用获取最新的节点数据
+      // 注意：bodyNodes 在组件中是 ref，但通过 defineExpose 暴露后会自动解包
+      const bodyNodesRef = canvasRef.bodyNodes
+      loopBodyNodes = Array.isArray(bodyNodesRef) ? bodyNodesRef : (bodyNodesRef.value || bodyNodesRef || [])
+    } else if (loopBodyCanvasNode.loopBody && loopBodyCanvasNode.loopBody.nodes) {
+      // 回退到 loopBody 中存储的节点数据
+      loopBodyNodes = loopBodyCanvasNode.loopBody.nodes
+    }
+
     loopBodyNodes.forEach((node) => {
-      const nodeOutputs = getNodeOutputParams(node)
-      nodeOutputs.forEach((param) => {
-        // 过滤掉数组类型的变量
-        if (param.type && param.type.startsWith('Array')) return
-        if (param.isPlaceholder) return
-        addVariable({
-          nodeId: node.id,
-          nodeName: node.name,
-          param: param.name,
-          type: param.type,
-          variable: `\${${node.name}.${param.name}}`,
-          source: 'loopBody', // 标记来源：循环体
+      // 特殊处理 HTTPS/HTTP 接口调用节点：展开所有属性字段
+      if (node.type === 'apiAuto') {
+        const treeOutputs = getNodeOutputParams(node)
+        if (treeOutputs && treeOutputs.length > 0) {
+          // 扁平化树形结构，获取所有属性
+          const flatOutputs = flattenJsonTree(treeOutputs)
+          flatOutputs.forEach((param) => {
+            // 过滤掉数组类型的变量
+            if (param.type && param.type.startsWith('Array')) return
+            addVariable({
+              nodeId: node.id,
+              nodeName: node.name,
+              param: param.name,
+              type: param.type,
+              variable: `\${${node.name}.${param.name}}`,
+              source: 'loopBody', // 标记来源：循环体
+              isNested: param.isNested, // 标记是否为嵌套属性
+            })
+          })
+        }
+      } else {
+        // 其他节点：正常处理
+        const nodeOutputs = getNodeOutputParams(node)
+        nodeOutputs.forEach((param) => {
+          // 过滤掉数组类型的变量
+          if (param.type && param.type.startsWith('Array')) return
+          if (param.isPlaceholder) return
+          addVariable({
+            nodeId: node.id,
+            nodeName: node.name,
+            param: param.name,
+            type: param.type,
+            variable: `\${${node.name}.${param.name}}`,
+            source: 'loopBody', // 标记来源：循环体
+          })
         })
-      })
+      }
     })
   }
 
@@ -2029,6 +2070,19 @@ const datasetList = ref([
 const variableSelectorField = ref(null)
 const showVariableSelectorDialog = ref(false)
 
+// Dictionary columns缓存
+const dictionaryColumnsCache = ref({})
+
+// 展开的变量索引
+const expandedVariableIndex = ref(new Set())
+
+// 正在加载columns的变量索引
+const loadingColumnsIndex = ref(new Set())
+
+// 多选模式相关
+const isMultiSelectMode = ref(false) // 是否为多选模式
+const selectedColumns = ref(new Set()) // 多选模式下已选择的columns
+
 // 裁判模型节点变量选择器相关
 const judgeModelTypeField = ref(null) // 记录当前选择的类型字段
 
@@ -2050,8 +2104,11 @@ const handleFileUpload = (file, field) => {
 }
 
 // 显示变量选择器
-const showVariableSelector = (field) => {
+const showVariableSelector = (field, multiSelect = false) => {
   variableSelectorField.value = field
+  isMultiSelectMode.value = multiSelect
+  selectedColumns.value = new Set() // 重置多选状态
+  expandedVariableIndex.value = new Set() // 重置展开状态
   showVariableSelectorDialog.value = true
 }
 
@@ -2124,6 +2181,64 @@ const showTableGenerateVariableSelector = (index) => {
   showVariableSelectorDialog.value = true
 }
 
+// ========== 结束节点输入参数相关函数 ==========
+
+// 添加结束节点输入参数
+const addEndInputParam = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.config.inputParams) {
+    selectedNode.value.config.inputParams = []
+  }
+  selectedNode.value.config.inputParams.push({
+    name: '',
+    type: 'String',
+    value: '',
+  })
+}
+
+// 删除结束节点输入参数
+const removeEndInputParam = (index) => {
+  if (!selectedNode.value || !selectedNode.value.config.inputParams) return
+  selectedNode.value.config.inputParams.splice(index, 1)
+}
+
+// 获取结束节点参数类型显示值
+const getEndTypeValue = (param) => {
+  if (!param.type) return 'String'
+  if (param.type === 'Array') return 'Array<String>'
+  if (param.type === 'Dictionary') return 'Dictionary'
+  return param.type
+}
+
+// 处理结束节点类型变化
+const handleEndTypeChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.config.inputParams) return
+  const param = selectedNode.value.config.inputParams[index]
+  if (!param) return
+
+  if (value === 'Array<String>') {
+    param.type = 'Array'
+    param.elementType = 'String'
+  } else if (value === 'Dictionary') {
+    param.type = 'Dictionary'
+    param.dictionaryType = '公文写作数据字典'
+  } else {
+    param.type = value
+    delete param.elementType
+    delete param.dictionaryType
+  }
+}
+
+// 结束节点变量选择器索引
+const endVariableIndex = ref(null)
+
+// 显示结束节点变量选择器
+const showEndVariableSelector = (index) => {
+  variableSelectorField.value = `endInputParam_${index}`
+  endVariableIndex.value = index
+  showVariableSelectorDialog.value = true
+}
+
 // 获取前置节点的输出变量列表
 const getUpstreamNodeOutputs = () => {
   if (!selectedNode.value) return []
@@ -2160,6 +2275,15 @@ const getUpstreamNodeOutputs = () => {
 
   findUpstreamNodes(selectedNode.value.id)
   return outputs
+}
+
+// 根据变量值获取其类型
+const getVariableType = (variableValue) => {
+  if (!variableValue || !variableValue.startsWith('${')) return null
+
+  const upstreamOutputs = getUpstreamNodeOutputs()
+  const selectedOutput = upstreamOutputs.find((item) => item.variable === variableValue)
+  return selectedOutput ? selectedOutput.type : null
 }
 
 // 选择循环输出变量（自动推断类型）
@@ -2237,11 +2361,156 @@ const selectVariable = (variable) => {
     }
   }
 
+  // 处理结束节点的变量选择和类型自动调整
+  if (selectedNode.value.type === 'end' && variableSelectorField.value.startsWith('endInputParam_')) {
+    const index = endVariableIndex.value
+    if (index !== null && selectedNode.value.config.inputParams && selectedNode.value.config.inputParams[index]) {
+      selectedNode.value.config.inputParams[index].value = variable
+      // 根据选择的变量类型自动调整参数类型
+      const upstreamOutputs = getUpstreamNodeOutputs()
+      const selectedOutput = upstreamOutputs.find((item) => item.variable === variable)
+      if (selectedOutput) {
+        const varType = selectedOutput.type || ''
+        const param = selectedNode.value.config.inputParams[index]
+        if (varType.includes('Array') || varType.includes('[')) {
+          param.type = 'Array'
+          param.elementType = 'String'
+        } else if (varType.includes('Dictionary') || varType.includes('数据字典')) {
+          param.type = 'Dictionary'
+          param.dictionaryType = '公文写作数据字典'
+        } else {
+          param.type = 'String'
+          delete param.elementType
+          delete param.dictionaryType
+        }
+      }
+    }
+  }
+
   showVariableSelectorDialog.value = false
   variableSelectorField.value = null
   loopOutputVariableIndex.value = null
   judgeModelTypeField.value = null
   tableGenerateVariableIndex.value = null
+  endVariableIndex.value = null
+}
+
+// 判断类型是否为Dictionary类型
+const isDictionaryType = (type) => {
+  if (!type) return false
+  return type.startsWith('Dictionary(') || type.startsWith('Dictionary<')
+}
+
+// 从类型字符串中解析Dictionary名称
+const parseDictionaryName = (type) => {
+  if (!type) return null
+  // 匹配 Dictionary(xxx) 或 Dictionary<xxx>
+  const match = type.match(/Dictionary[<(](.+)[)>]/)
+  return match ? match[1] : null
+}
+
+// 加载Dictionary的columns
+const loadDictionaryColumns = async (type, index) => {
+  const dictionaryName = parseDictionaryName(type)
+  if (!dictionaryName) return
+
+  // 检查缓存
+  if (dictionaryColumnsCache.value[dictionaryName]) {
+    return
+  }
+
+  // 标记正在加载
+  loadingColumnsIndex.value.add(index)
+  loadingColumnsIndex.value = new Set(loadingColumnsIndex.value)
+
+  try {
+    const response = await getDictionaryColumnsByName(dictionaryName)
+    const columns = response.data || []
+    // 存入缓存
+    dictionaryColumnsCache.value[dictionaryName] = columns
+  } catch (error) {
+    console.error('获取Dictionary columns失败:', error)
+    ElMessage.error('系统服务异常！')
+    dictionaryColumnsCache.value[dictionaryName] = []
+  } finally {
+    // 移除加载标记
+    loadingColumnsIndex.value.delete(index)
+    loadingColumnsIndex.value = new Set(loadingColumnsIndex.value)
+  }
+}
+
+// 切换变量展开状态
+const toggleVariableExpand = async (index, item) => {
+  const expandedSet = expandedVariableIndex.value
+
+  if (expandedSet.has(index)) {
+    // 折叠
+    expandedSet.delete(index)
+  } else {
+    // 展开
+    expandedSet.add(index)
+    // 加载columns
+    await loadDictionaryColumns(item.type, index)
+  }
+
+  // 强制更新视图
+  expandedVariableIndex.value = new Set(expandedSet)
+}
+
+// 选择column作为变量值
+const selectColumnAsVariable = (item, column) => {
+  const variableValue = `${item.variable}.${column.key}`
+  selectVariable(variableValue)
+}
+
+// 生成column选择的唯一key
+const getColumnSelectionKey = (item, column) => {
+  return `${item.variable}.${column.key}`
+}
+
+// 判断column是否已选中
+const isColumnSelected = (item, column) => {
+  const key = getColumnSelectionKey(item, column)
+  return selectedColumns.value.has(key)
+}
+
+// 切换column选中状态
+const toggleColumnSelection = (item, column) => {
+  const key = getColumnSelectionKey(item, column)
+  const newSet = new Set(selectedColumns.value)
+  if (newSet.has(key)) {
+    newSet.delete(key)
+  } else {
+    newSet.add(key)
+  }
+  selectedColumns.value = newSet
+}
+
+// 处理column点击
+const handleColumnClick = (item, column) => {
+  if (isMultiSelectMode.value) {
+    toggleColumnSelection(item, column)
+  } else {
+    selectColumnAsVariable(item, column)
+  }
+}
+
+// 取消多选
+const cancelMultiSelect = () => {
+  showVariableSelectorDialog.value = false
+  selectedColumns.value = new Set()
+  isMultiSelectMode.value = false
+}
+
+// 确认多选
+const confirmMultiSelect = () => {
+  if (selectedColumns.value.size === 0) return
+
+  // 将选中的columns拼接成数组格式的字符串
+  const columnKeys = Array.from(selectedColumns.value)
+  const variableValue = columnKeys.join(',')
+
+  selectVariable(variableValue)
 }
 
 // 初始化文本清洗节点配置
@@ -2448,6 +2717,7 @@ const addConnectedNode = (type) => {
     newNode.inputParams = []
   } else if (type === 'end') {
     newNode.outputs = []
+    newNode.config.inputParams = []
   }
 
   // 条件判断节点特殊处理
@@ -2695,6 +2965,18 @@ const stopDragNode = () => {
 
   // 恢复文本选择
   document.body.style.userSelect = ''
+}
+
+// 循环体画布组件引用（用于获取最新的 bodyNodes）
+const loopBodyCanvasRefs = ref({})
+
+// 设置循环体画布组件引用
+const setLoopBodyCanvasRef = (id, el) => {
+  if (el) {
+    loopBodyCanvasRefs.value[id] = el
+  } else {
+    delete loopBodyCanvasRefs.value[id]
+  }
 }
 
 // 循环体画布拖拽状态
@@ -3673,6 +3955,7 @@ onUnmounted(() => {
           <LoopBodyCanvas
             v-for="loopBodyNode in getLoopBodyNodes"
             :key="loopBodyNode.id"
+            :ref="(el) => setLoopBodyCanvasRef(loopBodyNode.id, el)"
             :loop-body-node="loopBodyNode"
             :loop-node="nodes.find(n => n.id === loopBodyNode.belongsTo)"
             :node-types="nodeTypes"
@@ -4087,9 +4370,13 @@ onUnmounted(() => {
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" width="100" align="center">
+                  <el-table-column label="类型" width="120" align="center">
                     <template #default="{ row }">
-                      <span class="param-type-tag">{{ row.type }}</span>
+                      <span class="param-type-tag">
+                        {{ row.field === 'cycle_array' && selectedNode.config.cycle_array
+                           ? (getVariableType(selectedNode.config.cycle_array) || row.type)
+                           : row.type }}
+                      </span>
                     </template>
                   </el-table-column>
                   <el-table-column label="变量值" min-width="160">
@@ -4106,23 +4393,16 @@ onUnmounted(() => {
                           controls-position="right"
                         />
                       </div>
-                      <!-- cycle_array: 下拉选择数组变量 -->
+                      <!-- cycle_array: 弹窗选择数组变量 -->
                       <div v-else-if="row.field === 'cycle_array'" class="param-value-input">
-                        <el-select
+                        <el-input
                           v-model="selectedNode.config.cycle_array"
                           placeholder="选择数组变量"
                           size="small"
-                          style="width: 100%"
-                          clearable
-                          filterable
-                        >
-                          <el-option
-                            v-for="arrVar in getArrayVariables()"
-                            :key="arrVar.value"
-                            :label="arrVar.label"
-                            :value="arrVar.value"
-                          />
-                        </el-select>
+                          class="param-input-with-btn"
+                          readonly
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, true)"><Link /></el-icon>
                       </div>
                     </template>
                   </el-table-column>
@@ -4353,8 +4633,8 @@ onUnmounted(() => {
               <div class="io-section-content">
                 <el-table
                   :data="[
-                    { name: 'input_file', type: 'File', required: true, desc: '需要被清洗的目标xlsx文件', field: 'inputFileValue' },
-                    { name: 'cols', type: 'String', required: true, desc: '指定xlsx文件中需要清洗的列（英文逗号分隔）', field: 'colsValue' },
+                    { name: 'input_file', type: 'File', required: false, desc: '需要被清洗的目标xlsx文件', field: 'inputFileValue' },
+                    { name: 'cols', type: 'Array<String>', required: true, desc: '指定xlsx文件中需要清洗的列', field: 'colsValue' },
                     { name: 'remove_extra_spaces', type: 'Boolean', required: false, desc: '是否去除多余空格', field: 'removeExtraSpaces' },
                     { name: 'remove_html_tags', type: 'Boolean', required: false, desc: '是否去除HTML标签', field: 'removeHtmlTags' },
                     { name: 'remove_special_chars', type: 'Boolean', required: false, desc: '是否去除特殊字符', field: 'removeSpecialChars' },
@@ -4375,7 +4655,7 @@ onUnmounted(() => {
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" width="100" align="center">
+                  <el-table-column label="类型" width="120" align="center">
                     <template #default="{ row }">
                       <span class="param-type-tag">{{ row.type }}</span>
                     </template>
@@ -4419,7 +4699,7 @@ onUnmounted(() => {
                           size="small"
                           class="param-input-with-btn"
                         />
-                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, row.type && row.type.startsWith('Array'))"><Link /></el-icon>
                       </div>
                     </template>
                   </el-table-column>
@@ -4435,7 +4715,7 @@ onUnmounted(() => {
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="[{ name: 'output_file', type: 'File', desc: '被清洗之后的xlsx文件' }]"
+                  :data="[{ name: 'output_file', type: `File`, desc: '被清洗之后的xlsx文件' }]"
                   size="small"
                   class="io-table"
                 >
@@ -4522,7 +4802,7 @@ onUnmounted(() => {
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="[{ name: 'output', type: 'Array<Object>', desc: '从表格中提取的数据数组' }]"
+                  :data="[{ name: 'output', type: 'Array<String>', desc: '从表格中提取的数据数组' }]"
                   size="small"
                   class="io-table"
                 >
@@ -4565,8 +4845,9 @@ onUnmounted(() => {
                   ]"
                   size="small"
                   class="io-table"
+                  table-layout="fixed"
                 >
-                  <el-table-column label="变量名" min-width="180">
+                  <el-table-column label="变量名" width="120">
                     <template #default="{ row }">
                       <div class="param-name-cell">
                         <span v-if="row.required" class="required-mark">*</span>
@@ -4577,21 +4858,21 @@ onUnmounted(() => {
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" width="100" align="center">
+                  <el-table-column label="类型" width="80" align="center">
                     <template #default="{ row }">
                       <span class="param-type-tag">{{ row.type }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="变量值" min-width="200">
+                  <el-table-column label="变量值" min-width="160">
                     <template #default="{ row }">
-                      <!-- Textarea 类型（response、body、headers）：文本域 + 关联按钮 -->
+                      <!-- Textarea 类型（response、body、headers): 文本域 + 关联按钮 -->
                       <div v-if="row.name === 'response' || row.name === 'body' || row.name === 'headers'" class="param-value-input textarea-input">
                         <el-input
                           v-model="selectedNode.config[row.field]"
                           :placeholder="row.name === 'response' ? '输入JSON示例以推断输出变量' : '输入或引用参数值'"
                           size="small"
                           type="textarea"
-                          :rows="3"
+                          :rows="1"
                           class="param-textarea-with-btn"
                           @input="row.name === 'response' && refreshApiAutoOutputs()"
                         />
@@ -4625,25 +4906,10 @@ onUnmounted(() => {
                 <span class="output-hint">（根据response示例自动推断）</span>
               </div>
               <div class="io-section-content">
-                <el-table
+                <JsonTreeView
                   :data="getApiAutoOutputParams()"
-                  size="small"
-                  class="io-table"
                   empty-text="请输入response示例以推断输出变量"
-                >
-                  <el-table-column label="变量名" min-width="160">
-                    <template #default="{ row }">
-                      <div class="param-name-cell">
-                        <span class="param-name-text">{{ row.name }}</span>
-                      </div>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="类型" width="100" align="center">
-                    <template #default="{ row }">
-                      <span class="param-type-tag">{{ row.type }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
+                />
               </div>
             </div>
           </template>
@@ -4666,8 +4932,9 @@ onUnmounted(() => {
                   ]"
                   size="small"
                   class="io-table"
+                  table-layout="fixed"
                 >
-                  <el-table-column label="变量名" min-width="140">
+                  <el-table-column label="变量名" width="110">
                     <template #default="{ row }">
                       <div class="param-name-cell">
                         <span v-if="row.required" class="required-mark">*</span>
@@ -4678,7 +4945,7 @@ onUnmounted(() => {
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" min-width="130" align="center">
+                  <el-table-column label="类型" width="110" align="center">
                     <template #default="{ row }">
                       <!-- model: 固定显示 String -->
                       <span v-if="row.name === 'model'" class="param-type-tag">{{ row.type }}</span>
@@ -4699,7 +4966,7 @@ onUnmounted(() => {
                       </el-select>
                     </template>
                   </el-table-column>
-                  <el-table-column label="变量值" min-width="200">
+                  <el-table-column label="变量值" min-width="140">
                     <template #default="{ row }">
                       <!-- model: 下拉选择 -->
                       <div v-if="row.name === 'model'" class="param-value-input">
@@ -4719,7 +4986,7 @@ onUnmounted(() => {
                           placeholder="输入评估规则"
                           size="small"
                           type="textarea"
-                          :rows="3"
+                          :rows="1"
                           class="param-textarea-with-btn"
                         />
                         <el-icon class="action-icon link-icon" title="关联节点输出" @click="showJudgeModelVariableSelector(row.field)"><Link /></el-icon>
@@ -4748,7 +5015,7 @@ onUnmounted(() => {
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="[{ name: 'output', type: 'Array<Object>', desc: '评估结果，数组元素是JSON字符串' }]"
+                  :data="[{ name: 'output', type: 'Array<String>', desc: '评估结果，数组元素是JSON字符串' }]"
                   size="small"
                   class="io-table"
                 >
@@ -4790,12 +5057,12 @@ onUnmounted(() => {
                   class="io-table"
                   empty-text="暂无输入变量，请添加"
                 >
-                  <el-table-column label="变量名" min-width="140">
+                  <el-table-column label="变量名" width="100">
                     <template #default="{ row }">
                       <el-input v-model="row.name" placeholder="请输入变量名" size="small" />
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" min-width="160" align="center">
+                  <el-table-column label="变量类型" width="110">
                     <template #default="{ row, $index }">
                       <el-select
                         :model-value="getTableGenerateTypeValue(row)"
@@ -4810,7 +5077,7 @@ onUnmounted(() => {
                       </el-select>
                     </template>
                   </el-table-column>
-                  <el-table-column label="变量值" min-width="180">
+                  <el-table-column label="变量值" min-width="160">
                     <template #default="{ row, $index }">
                       <div class="param-value-input">
                         <el-input
@@ -4823,7 +5090,7 @@ onUnmounted(() => {
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="60" align="center">
+                  <el-table-column label="操作" width="50" align="center">
                     <template #default="{ $index }">
                       <el-button
                         type="danger"
@@ -4870,6 +5137,73 @@ onUnmounted(() => {
             </div>
           </template>
 
+          <!-- 结束节点配置 -->
+          <template v-if="selectedNode.type === 'end'">
+            <!-- 输入参数（可增减） -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输入</span>
+                <el-button type="primary" text size="small" :icon="Plus" @click="addEndInputParam" style="margin-left: auto;">
+                  添加变量
+                </el-button>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="selectedNode.config.inputParams"
+                  size="small"
+                  class="io-table"
+                  empty-text="暂无输入变量，请添加"
+                >
+                  <el-table-column label="变量名" width="100">
+                    <template #default="{ row }">
+                      <el-input v-model="row.name" placeholder="请输入变量名" size="small" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量类型" width="110">
+                    <template #default="{ row, $index }">
+                      <el-select
+                        :model-value="getEndTypeValue(row)"
+                        placeholder="选择类型"
+                        size="small"
+                        style="width: 100%"
+                        @update:model-value="(val) => handleEndTypeChange($index, val)"
+                      >
+                        <el-option label="String" value="String" />
+                        <el-option label="Array<String>" value="Array<String>" />
+                        <el-option label="数据字典" value="Dictionary" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="160">
+                    <template #default="{ row, $index }">
+                      <div class="param-value-input">
+                        <el-input
+                          v-model="row.value"
+                          placeholder="输入或引用参数值"
+                          size="small"
+                          class="param-input-with-btn"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showEndVariableSelector($index)"><Link /></el-icon>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="50" align="center">
+                    <template #default="{ $index }">
+                      <el-button
+                        type="danger"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeEndInputParam($index)"
+                      />
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </template>
+
         </div>
       </div>
     </div>
@@ -4889,19 +5223,95 @@ onUnmounted(() => {
           v-for="(item, index) in getUpstreamNodeOutputs()"
           :key="index"
           class="variable-item"
-          @click="selectVariable(item.variable)"
+          :class="{ 'is-dictionary': isDictionaryType(item.type) }"
         >
-          <div class="variable-info">
-            <span class="variable-node">{{ item.nodeName }}</span>
-            <span class="variable-arrow">→</span>
-            <span class="variable-param">{{ item.param }}</span>
+          <!-- 普通变量项 -->
+          <div
+            v-if="!isDictionaryType(item.type)"
+            class="variable-item-main"
+            @click="selectVariable(item.variable)"
+          >
+            <div class="variable-info">
+              <span class="variable-node">{{ item.nodeName }}</span>
+              <span class="variable-arrow">→</span>
+              <span class="variable-param">{{ item.param }}</span>
+            </div>
+            <div class="variable-meta">
+              <span class="variable-type">{{ item.type }}</span>
+              <span class="variable-expr">{{ item.variable }}</span>
+            </div>
           </div>
-          <div class="variable-meta">
-            <span class="variable-type">{{ item.type }}</span>
-            <span class="variable-expr">{{ item.variable }}</span>
-          </div>
+
+          <!-- Dictionary类型变量项 -->
+          <template v-else>
+            <div class="variable-item-main dictionary-header">
+              <div class="variable-info">
+                <span class="variable-node">{{ item.nodeName }}</span>
+                <span class="variable-arrow">→</span>
+                <span class="variable-param">{{ item.param }}</span>
+              </div>
+              <div class="variable-meta">
+                <span class="variable-type">{{ item.type }}</span>
+                <span class="variable-expr">{{ item.variable }}</span>
+                <span
+                  class="variable-expand-btn"
+                  @click.stop="toggleVariableExpand(index, item)"
+                >
+                  <el-icon v-if="loadingColumnsIndex.has(index)" class="is-loading">
+                    <Loading />
+                  </el-icon>
+                  <el-icon v-else-if="expandedVariableIndex.has(index)">
+                    <ArrowDown />
+                  </el-icon>
+                  <el-icon v-else>
+                    <ArrowRight />
+                  </el-icon>
+                </span>
+              </div>
+            </div>
+
+            <!-- Dictionary columns列表 -->
+            <div
+              v-if="expandedVariableIndex.has(index)"
+              class="dictionary-columns"
+            >
+              <div
+                v-for="column in dictionaryColumnsCache[parseDictionaryName(item.type)] || []"
+                :key="column.key"
+                class="dictionary-column-item"
+                :class="{ 'is-multi-select': isMultiSelectMode, 'is-selected': isMultiSelectMode && isColumnSelected(item, column) }"
+                @click="handleColumnClick(item, column)"
+              >
+                <el-checkbox
+                  v-if="isMultiSelectMode"
+                  :model-value="isColumnSelected(item, column)"
+                  @click.stop
+                  @change="toggleColumnSelection(item, column)"
+                />
+                <span v-else class="column-select-indicator"></span>
+                <div class="column-info">
+                  <span class="column-key">{{ column.key }}</span>
+                  <span class="column-label">- {{ column.label }}</span>
+                </div>
+                <span class="column-type">{{ column.type }}</span>
+              </div>
+              <div
+                v-if="!loadingColumnsIndex.has(index) && (!dictionaryColumnsCache[parseDictionaryName(item.type)] || dictionaryColumnsCache[parseDictionaryName(item.type)].length === 0)"
+                class="no-columns"
+              >
+                暂无字段定义
+              </div>
+            </div>
+          </template>
         </div>
       </div>
+      <template v-if="isMultiSelectMode" #footer>
+        <div class="dialog-footer">
+          <span class="selected-count">已选择 {{ selectedColumns.size }} 项</span>
+          <el-button @click="cancelMultiSelect">取消</el-button>
+          <el-button type="primary" @click="confirmMultiSelect" :disabled="selectedColumns.size === 0">确定</el-button>
+        </div>
+      </template>
     </el-dialog>
 
     <!-- 循环节点输出变量选择器对话框 -->
@@ -4919,6 +5329,7 @@ onUnmounted(() => {
           v-for="(item, index) in loopOutputSelectorList"
           :key="index"
           class="variable-item"
+          :class="{ 'nested-variable': item.isNested }"
           @click="selectLoopOutputVariable(item)"
         >
           <div class="variable-info">
@@ -4927,7 +5338,7 @@ onUnmounted(() => {
             </span>
             <span class="variable-node">{{ item.nodeName }}</span>
             <span class="variable-arrow">→</span>
-            <span class="variable-param">{{ item.param }}</span>
+            <span class="variable-param" :class="{ 'nested-param': item.isNested }">{{ item.param }}</span>
           </div>
           <div class="variable-meta">
             <span class="variable-type">{{ item.type }}</span>
@@ -6943,6 +7354,7 @@ onUnmounted(() => {
   padding: 2px 10px;
   background: #f3f4f6;
   border-radius: 4px;
+  white-space: nowrap;
 }
 
 .param-type-placeholder {
@@ -6956,6 +7368,26 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 表格生成节点：类型+变量值组合布局 */
+.param-value-with-type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.type-select-left {
+  width: 95px;
+  flex-shrink: 0;
+}
+
+.param-input-with-type {
+  flex: 1;
+}
+
+.param-value-with-type .link-icon {
+  flex-shrink: 0;
 }
 
 .param-input-with-btn {
@@ -7073,6 +7505,22 @@ onUnmounted(() => {
   margin-bottom: 0;
 }
 
+.variable-selector-dialog .variable-item.nested-variable {
+  background: #fafafa;
+  border-left: 3px solid #d4d4d8;
+}
+
+.variable-selector-dialog .variable-item.nested-variable:hover {
+  background: #f5f3ff;
+  border-left-color: #6366f1;
+}
+
+.variable-selector-dialog .nested-param {
+  color: #71717a;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+}
+
 .variable-selector-dialog .variable-info {
   display: flex;
   align-items: center;
@@ -7138,6 +7586,159 @@ onUnmounted(() => {
   font-size: 11px;
   color: #9ca3af;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Dictionary类型变量项样式 */
+.variable-selector-dialog .variable-item.is-dictionary {
+  cursor: default;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.variable-selector-dialog .variable-item.is-dictionary:hover {
+  border-color: #e5e7eb;
+  background: #fff;
+}
+
+.variable-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.variable-item-main.dictionary-header {
+  cursor: pointer;
+}
+
+.variable-item-main.dictionary-header:hover {
+  opacity: 0.85;
+}
+
+/* Dictionary展开/折叠按钮 */
+.variable-expand-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.2s;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.variable-expand-btn:hover {
+  color: #6366f1;
+}
+
+.variable-expand-btn .is-loading {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Dictionary columns列表 */
+.dictionary-columns {
+  margin-top: 10px;
+  padding: 8px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.dictionary-column-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dictionary-column-item:hover {
+  background: #f5f3ff;
+}
+
+.dictionary-column-item.is-multi-select {
+  cursor: pointer;
+}
+
+.dictionary-column-item.is-multi-select.is-selected {
+  background: #f0f9ff;
+  border: 1px solid #3b82f6;
+}
+
+.dictionary-column-item.is-multi-select .el-checkbox {
+  flex-shrink: 0;
+}
+
+.column-select-indicator {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dictionary-column-item:hover .column-select-indicator {
+  border-color: #6366f1;
+}
+
+.column-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.column-key {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.column-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.column-type {
+  font-size: 11px;
+  color: #6b7280;
+  padding: 2px 6px;
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+.no-columns {
+  text-align: center;
+  color: #9ca3af;
+  padding: 16px;
+  font-size: 13px;
+}
+
+/* 多选模式对话框footer */
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.selected-count {
+  flex: 1;
+  font-size: 13px;
+  color: #6b7280;
 }
 
 /* HTTPS/HTTP接口调用节点样式 */

@@ -74,3 +74,12 @@ export async function getDictionaryLinkStatus(id) {
 export async function getAllDictionaries() {
   return get(`${BASE_URL}/all`)
 }
+
+/**
+ * 根据名称获取数据字典的columns
+ * @param {string} name - 数据字典名称
+ * @returns {Promise<Array>} columns列表
+ */
+export async function getDictionaryColumnsByName(name) {
+  return get(`${BASE_URL}/by-name/${encodeURIComponent(name)}/columns`)
+}

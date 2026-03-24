@@ -27,7 +27,14 @@ npm run format
 # 预览生产构建
 npm run preview
 ```
-
+data:Object
+├── property1：String
+├── property2：String
+└──array1：Array<Object>
+    ├── property3：String
+    └── property4：String
+├── components/      # 通用组件
+└── assets/          # 静态资源
 ## 技术栈
 
 - **Vue 3** - 前端框架

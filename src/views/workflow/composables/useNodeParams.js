@@ -3,6 +3,94 @@
  * 根据节点类型获取输入/输出参数，用于节点显示
  */
 
+// 生成唯一key
+let keyCounter = 0
+const generateKey = () => `tree_${keyCounter++}`
+
+// 根据JSON对象构建树形结构数据
+export const buildJsonTree = (obj) => {
+  if (typeof obj !== 'object' || obj === null) {
+    return []
+  }
+
+  const result = []
+
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const value = obj[key]
+      const node = {
+        key: generateKey(),
+        name: key,
+        type: 'String',
+        children: []
+      }
+
+      if (value === null) {
+        node.type = 'String'
+      } else if (typeof value === 'number') {
+        node.type = 'Number'
+      } else if (typeof value === 'boolean') {
+        node.type = 'Boolean'
+      } else if (Array.isArray(value)) {
+        node.type = 'Array'
+        // 分析数组元素类型
+        if (value.length > 0) {
+          const firstElement = value[0]
+          if (typeof firstElement === 'object' && firstElement !== null) {
+            node.elementType = 'Object'
+            // 为数组元素构建子节点结构
+            const childNodes = buildJsonTree(firstElement)
+            node.children = childNodes
+          } else if (typeof firstElement === 'string') {
+            node.elementType = 'String'
+          } else if (typeof firstElement === 'number') {
+            node.elementType = 'Number'
+          } else if (typeof firstElement === 'boolean') {
+            node.elementType = 'Boolean'
+          }
+        } else {
+          node.elementType = 'String'
+        }
+      } else if (typeof value === 'object') {
+        node.type = 'Object'
+        node.children = buildJsonTree(value)
+      }
+
+      result.push(node)
+    }
+  }
+
+  return result
+}
+
+// 扁平化树形结构，返回所有属性的扁平列表（用于变量选择器）
+export const flattenJsonTree = (treeData, parentPath = '') => {
+  const result = []
+
+  const flatten = (items, prefix) => {
+    items.forEach((item) => {
+      const fullPath = prefix ? `${prefix}.${item.name}` : item.name
+      const typeText = item.type === 'Array' && item.elementType
+        ? `Array<${item.elementType}>`
+        : item.type
+
+      result.push({
+        name: fullPath,
+        type: typeText,
+        isNested: !!prefix // 标记是否为嵌套属性
+      })
+
+      // 如果有子节点，递归处理
+      if (item.children && item.children.length > 0) {
+        flatten(item.children, fullPath)
+      }
+    })
+  }
+
+  flatten(treeData, parentPath)
+  return result
+}
+
 // 格式化参数类型显示
 export const formatParamType = (param) => {
   if (!param.type) return 'String'
@@ -173,6 +261,18 @@ export const getNodeInputParams = (node) => {
     }))
   }
 
+  // 结束节点：从 config.inputParams 读取（用户自定义）
+  if (node.type === 'end') {
+    const inputParams = node.config?.inputParams || []
+    if (inputParams.length === 0) {
+      return [{ name: '-', type: '-', isPlaceholder: true }]
+    }
+    return inputParams.map((param) => ({
+      name: param.name || '',
+      type: formatParamType(param),
+    }))
+  }
+
   // 其他节点：默认输入参数
   return [{ name: 'input', type: 'Any' }]
 }
@@ -213,19 +313,11 @@ export const getNodeOutputParams = (node) => {
     ]
   }
 
-  // 表格提取节点：从 outputParams 读取
+  // 表格提取节点：固定输出 output 变量，类型为 Array<String>
   if (node.type === 'tableExtract') {
-    const outputParams = node.outputParams || [
-      { name: 'output', type: 'Array', elementType: 'Object', description: '提取的表格数据数组' }
+    return [
+      { name: 'output', type: 'Array<String>', description: '从表格中提取的数据数组' }
     ]
-    if (outputParams.length === 0) {
-      return [{ name: 'output', type: 'Array[Object]', isPlaceholder: false }]
-    }
-    return outputParams.map((param) => ({
-      name: param.name || '',
-      type: formatParamType(param),
-      description: param.description,
-    }))
   }
 
   // 循环节点：从 outputParams 读取
@@ -244,50 +336,33 @@ export const getNodeOutputParams = (node) => {
   if (node.type === 'apiAuto') {
     // 从 config.responseValue 读取响应示例（与模板中绑定的字段名一致）
     const responseValue = node.config?.responseValue
+    // 如果没有设置 response 值，返回空数组
+    if (!responseValue || (typeof responseValue === 'string' && !responseValue.trim())) {
+      return []
+    }
     // 尝试解析response是否为JSON结构
-    if (responseValue && typeof responseValue === 'string' && responseValue.trim()) {
+    if (typeof responseValue === 'string' && responseValue.trim()) {
       try {
         const parsed = JSON.parse(responseValue.trim())
         if (typeof parsed === 'object' && parsed !== null) {
-          // 根据JSON结构生成输出变量
-          const outputs = []
-          const flattenObject = (obj, prefix = '') => {
-            for (const key in obj) {
-              const varName = prefix ? `${prefix}.${key}` : key
-              const value = obj[key]
-              if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-                flattenObject(value, varName)
-              } else {
-                let varType = 'String'
-                if (typeof value === 'number') varType = 'Number'
-                else if (typeof value === 'boolean') varType = 'Boolean'
-                else if (Array.isArray(value)) varType = 'Array'
-                outputs.push({ name: varName, type: varType })
-              }
-            }
-          }
-          flattenObject(parsed)
-          if (outputs.length > 0) {
-            return outputs
-          }
+          // 生成树形结构的输出变量
+          return buildJsonTree(parsed)
         }
       } catch (e) {
-        // 不是有效的JSON，返回默认的response变量
+        // 不是有效的JSON，返回空数组
+        return []
       }
     }
-    // 默认返回 response 和 statusCode（即使没有输入 response 示例）
-    return [
-      { name: 'response', type: 'String' },
-      { name: 'statusCode', type: 'Number' },
-    ]
+    // 其他情况返回空数组
+    return []
   }
 
-  // 裁判模型节点：输出参数为 output (Array<Object>)
+  // 裁判模型节点：输出参数为 output (Array<String>)
   if (node.type === 'judgeModel') {
     return [
       {
         name: 'output',
-        type: 'Array[Object]',
+        type: 'Array<String>',
         description: '评估结果，数组元素是JSON字符串',
       },
     ]
