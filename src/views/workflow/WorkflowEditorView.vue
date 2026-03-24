@@ -39,7 +39,7 @@ import { useAssociations } from './composables/useAssociations'
 import { useNodeParams, flattenJsonTree, getNodeOutputParams } from './composables/useNodeParams'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
-import { getDefaultWorkflow } from '@/api/workflow.js'
+import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow } from '@/api/workflow.js'
 import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
 import { getDictionaryColumnsByName } from '@/api/dictionary.js'
 import { marked } from 'marked'
@@ -751,6 +751,19 @@ const getNodeTypeConfig = (type) => {
   return nodeTypes.value.find((t) => t.type === type) || nodeTypes.value[0]
 }
 
+// 解析 JSON 字段的辅助函数
+const parseJsonField = (field, defaultValue) => {
+  if (!field) return defaultValue
+  if (typeof field === 'string') {
+    try {
+      return JSON.parse(field)
+    } catch {
+      return defaultValue
+    }
+  }
+  return field
+}
+
 // 获取图标组件
 const getIconComponent = (iconName) => {
   return iconComponents[iconName]
@@ -819,13 +832,143 @@ const goBack = () => {
   router.push('/workflow')
 }
 
+// 保存状态
+const saveState = reactive({
+  isSaving: false,
+  lastSavedAt: null,
+})
+
 // 保存工作流
 const saveWorkflow = async () => {
+  if (saveState.isSaving) {
+    ElMessage.warning('正在保存中，请稍候...')
+    return
+  }
+
+  saveState.isSaving = true
   try {
-    // 保存逻辑
+    // 构建节点数据（转换为后端格式）
+    const nodesData = nodes.value.map((node) => {
+      // 基础节点数据
+      const baseNode = {
+        nodeUuid: node.id,
+        type: node.type,
+        name: node.name,
+        positionX: Math.round(node.x),
+        positionY: Math.round(node.y),
+        inputPorts: JSON.stringify(node.inputs || []),
+        outputPorts: JSON.stringify(node.outputs || []),
+        inputParams: JSON.stringify(node.inputParams || []),
+        outputParams: JSON.stringify(node.outputParams || []),
+        config: JSON.stringify(node.config || {}),
+        parentNodeUuid: node.parentNodeId || null,
+      }
+
+      // 如果是循环体节点，添加完整属性（包含内部画布的完整数据）
+      if (node.type === 'loopBodyCanvas') {
+        // 获取循环体画布的引用
+        const loopBodyCanvasRef = loopBodyCanvasRefs.value[node.id]
+        let loopBodyData = node.loopBody || null
+
+        // 如果有画布组件引用，获取最新的内部节点和连线数据
+        if (loopBodyCanvasRef && loopBodyCanvasRef.getLoopBodyData) {
+          loopBodyData = loopBodyCanvasRef.getLoopBodyData()
+        }
+
+        baseNode.config = JSON.stringify({
+          ...node.config,
+          width: node.width || 500,
+          height: node.height || 400,
+          belongsTo: node.belongsTo,
+          // 循环体完整数据：包含内部节点、连线、端口配置
+          loopBody: loopBodyData ? {
+            canvas: loopBodyData.canvas || { scale: 1, offsetX: 0, offsetY: 0 },
+            nodes: (loopBodyData.nodes || []).map((innerNode) => ({
+              id: innerNode.id,
+              type: innerNode.type,
+              name: innerNode.name,
+              x: innerNode.x,
+              y: innerNode.y,
+              inputs: innerNode.inputs || [],
+              outputs: innerNode.outputs || [],
+              inputParams: innerNode.inputParams || [],
+              outputParams: innerNode.outputParams || [],
+              config: innerNode.config || {},
+            })),
+            connections: (loopBodyData.connections || []).map((innerConn) => ({
+              id: innerConn.id,
+              sourceId: innerConn.sourceId,
+              sourcePort: innerConn.sourcePort,
+              targetId: innerConn.targetId,
+              targetPort: innerConn.targetPort,
+              sourceParamIndex: innerConn.sourceParamIndex,
+              targetParamIndex: innerConn.targetParamIndex,
+            })),
+            leftPort: loopBodyData.leftPort || { id: 'port-left', name: '输入', type: 'input', y: 200, params: [] },
+            rightPort: loopBodyData.rightPort || { id: 'port-right', name: '输出', type: 'output', y: 200, params: [] },
+          } : null,
+        })
+      }
+
+      return baseNode
+    })
+
+    // 构建连线数据（转换为后端格式）
+    const connectionsData = connections.value.map((conn) => ({
+      connectionUuid: conn.id,
+      sourceNodeUuid: conn.sourceId,  // 前端节点 UUID
+      sourcePortId: conn.sourcePort,
+      targetNodeUuid: conn.targetId,  // 前端节点 UUID
+      targetPortId: conn.targetPort,
+      sourceParamIndex: conn.sourceParamIndex || null,
+      targetParamIndex: conn.targetParamIndex || null,
+      label: conn.label || null,
+    }))
+
+    // 构建关联数据（循环节点与循环体画布的关联）
+    const associationsData = associations.value.map((assoc) => ({
+      loopNodeUuid: assoc.sourceId,  // 循环节点的前端 UUID
+      bodyNodeUuid: assoc.targetId,  // 循环体画布的前端 UUID
+      associationType: assoc.associationType || 'LOOP',
+    }))
+
+    const saveData = {
+      nodes: nodesData,
+      connections: connectionsData,
+      associations: associationsData,
+    }
+
+    // 判断是新建还是更新
+    const workflowId = workflow.id
+    const isNewWorkflow = workflowId === 'new' || !workflowId
+
+    if (isNewWorkflow) {
+      // 创建工作流（一次性保存完整数据）
+      const createResponse = await createWorkflow({
+        name: workflow.name,
+        description: workflow.description || '',
+        createdBy: workflow.createdBy || 'admin',
+        nodes: nodesData,
+        connections: connectionsData,
+        associations: associationsData,
+      })
+      if (createResponse && createResponse.data) {
+        workflow.id = createResponse.data.id
+        // 更新 URL 为工作流 ID，这样刷新页面时能正确加载
+        router.replace(`/workflow/${createResponse.data.id}?projectName=${encodeURIComponent(workflow.name)}`)
+      }
+    } else {
+      // 更新工作流数据
+      await saveWorkflowData(workflowId, saveData)
+    }
+
+    saveState.lastSavedAt = new Date()
     ElMessage.success('保存成功')
   } catch (error) {
+    console.error('保存工作流失败:', error)
     ElMessage.error('保存失败')
+  } finally {
+    saveState.isSaving = false
   }
 }
 
@@ -3834,6 +3977,120 @@ onMounted(async () => {
           config: {}
         })
       }
+    }
+  } else {
+    // 编辑已有工作流 - 从后端加载工作流数据
+    try {
+      const response = await getWorkflowDetail(route.params.id)
+
+      if (response) {
+        // 更新工作流基本信息
+        workflow.id = response.id
+        workflow.name = response.name
+        workflow.description = response.description || ''
+        workflow.published = response.published || false
+        workflow.hasRun = response.hasRun || false
+
+        // 映射后端返回的节点数据到前端格式
+        if (response.nodes && Array.isArray(response.nodes)) {
+          const nodeIdMap = {}
+
+          // 首先建立ID映射
+          response.nodes.forEach((node) => {
+            nodeIdMap[node.id] = node.nodeUuid
+          })
+
+          nodes.value = response.nodes.map((node) => {
+            const typeConfig = getNodeTypeConfig(node.type)
+            let nodeConfig = {}
+
+            // 解析配置
+            if (node.config) {
+              try {
+                nodeConfig = typeof node.config === 'string' ? JSON.parse(node.config) : node.config
+              } catch (e) {
+                nodeConfig = {}
+              }
+            }
+
+            const baseNode = {
+              id: node.nodeUuid,
+              type: node.type,
+              name: node.name,
+              x: node.positionX,
+              y: node.positionY,
+              inputs: parseJsonField(node.inputPorts, []),
+              outputs: parseJsonField(node.outputPorts, []),
+              inputParams: parseJsonField(node.inputParams, []),
+              outputParams: parseJsonField(node.outputParams, []),
+              config: nodeConfig,
+            }
+
+            // 如果是循环体节点，添加完整属性
+            if (node.type === 'loopBodyCanvas') {
+              baseNode.width = nodeConfig.width || 500
+              baseNode.height = nodeConfig.height || 400
+              baseNode.belongsTo = nodeConfig.belongsTo
+
+              // 添加循环体内部画布数据
+              if (nodeConfig.loopBody) {
+                baseNode.loopBody = nodeConfig.loopBody
+              } else {
+                // 如果没有循环体数据，创建默认结构
+                baseNode.loopBody = {
+                  canvas: { scale: 1, offsetX: 0, offsetY: 0 },
+                  nodes: [],
+                  connections: [],
+                  leftPort: { id: 'port-left', name: '输入', type: 'input', y: 200, params: [] },
+                  rightPort: { id: 'port-right', name: '输出', type: 'output', y: 200, params: [] },
+                }
+              }
+            }
+
+            // 如果是循环节点，添加默认的 outputParams
+            if (node.type === 'loop') {
+              if (baseNode.outputParams.length === 0) {
+                baseNode.outputParams = [
+                  { name: 'current_item', type: 'Any' },
+                  { name: 'current_index', type: 'Number' }
+                ]
+              }
+            }
+
+            return baseNode
+          })
+
+          // 映射后端返回的连接数据到前端格式
+          if (response.connections && Array.isArray(response.connections)) {
+            connections.value = response.connections.map((conn, index) => ({
+              id: conn.connectionUuid || `conn-${Date.now() + index}`,
+              sourceId: nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
+              sourcePort: conn.sourcePortId,
+              targetId: nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
+              targetPort: conn.targetPortId,
+              sourceParamIndex: conn.sourceParamIndex,
+              targetParamIndex: conn.targetParamIndex,
+              config: {}
+            }))
+          }
+
+          // 映射后端返回的关联数据到前端格式
+          if (response.associations && Array.isArray(response.associations)) {
+            associations.value = response.associations.map((assoc, index) => ({
+              id: `assoc-${index}`,
+              sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
+              targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+              associationType: assoc.associationType,
+              config: {}
+            }))
+          }
+        }
+      }
+    } catch (error) {
+      console.error('加载工作流失败:', error)
+      ElMessage.error('加载工作流失败')
+      // 加载失败时返回列表页
+      router.push('/workflow')
     }
   }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -13,52 +13,28 @@ import {
   VideoPlay,
   Setting,
 } from '@element-plus/icons-vue'
+import {
+  getWorkflowList,
+  createWorkflow,
+  deleteWorkflow as deleteWorkflowApi,
+  copyWorkflow as copyWorkflowApi,
+  publishWorkflow,
+} from '@/api/workflow'
 
 const router = useRouter()
+
+// 加载状态
+const loading = ref(false)
 
 // 分页相关状态
 const currentPage = ref(1)
 const pageSize = ref(10)
 
 // 工作流列表数据
-const workflowList = ref([
-  {
-    id: '1',
-    name: '智能问答工作流',
-    description: '基于用户输入进行智能问答处理的工作流程',
-    status: 'active',
-    nodeCount: 5,
-    lastModified: '2024-01-15 14:30',
-    version: 'v1.2',
-  },
-  {
-    id: '2',
-    name: '数据分析流水线',
-    description: '数据采集、清洗、分析和可视化的完整流程',
-    status: 'draft',
-    nodeCount: 8,
-    lastModified: '2024-01-14 09:15',
-    version: 'v2.0',
-  },
-  {
-    id: '3',
-    name: '报告生成工作流',
-    description: '自动生成测评报告的工作流程',
-    status: 'active',
-    nodeCount: 6,
-    lastModified: '2024-01-13 16:45',
-    version: 'v1.0',
-  },
-  {
-    id: '4',
-    name: '多模态处理流程',
-    description: '支持文本、图像、音频多模态数据处理的流程',
-    status: 'inactive',
-    nodeCount: 12,
-    lastModified: '2024-01-10 11:20',
-    version: 'v1.5',
-  },
-])
+const workflowList = ref([])
+
+// 总数
+const total = ref(0)
 
 // 搜索关键词
 const searchKeyword = ref('')
@@ -66,45 +42,48 @@ const searchKeyword = ref('')
 // 状态筛选
 const statusFilter = ref('')
 
-// 筛选后的完整列表
-const allFilteredList = computed(() => {
-  let result = workflowList.value
-
-  if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(
-      (item) =>
-        item.name.toLowerCase().includes(keyword) ||
-        item.description.toLowerCase().includes(keyword)
-    )
+// 获取工作流列表
+const fetchWorkflowList = async () => {
+  loading.value = true
+  try {
+    const params = {
+      page: currentPage.value,
+      size: pageSize.value,
+      keyword: searchKeyword.value,
+      status: statusFilter.value,
+    }
+    const response = await getWorkflowList(params)
+    // 假设后端返回格式为 { data: { list: [], total: 0 } }
+    if (response && response.data) {
+      workflowList.value = response.data.list || []
+      total.value = response.data.total || 0
+    }
+  } catch (error) {
+    // 错误已在 request.js 中统一处理
+    workflowList.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
   }
+}
 
-  if (statusFilter.value) {
-    result = result.filter((item) => item.status === statusFilter.value)
-  }
-
-  return result
-})
-
-// 总数
-const filteredTotal = computed(() => allFilteredList.value.length)
-
-// 分页后的列表
-const filteredList = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return allFilteredList.value.slice(start, end)
+// 监听搜索和筛选条件变化，重置页码并重新获取数据
+watch([searchKeyword, statusFilter], () => {
+  currentPage.value = 1
+  fetchWorkflowList()
 })
 
 // 分页大小变化处理
 const handleSizeChange = (val) => {
   pageSize.value = val
-  currentPage.value = 1 // 切换每页条数时重置到第一页
+  currentPage.value = 1
+  fetchWorkflowList()
 }
 
 // 页码变化处理
 const handlePageChange = (val) => {
   currentPage.value = val
+  fetchWorkflowList()
 }
 
 // 状态标签配置
@@ -118,8 +97,30 @@ const statusConfig = {
 const getStatusConfig = (status) => statusConfig[status] || { label: status, type: 'info' }
 
 // 新建工作流
-const createWorkflow = () => {
-  router.push('/workflow/new')
+const handleCreateWorkflow = async () => {
+  try {
+    const { value: name } = await ElMessageBox.prompt('请输入工作流名称', '新建工作流', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputPattern: /^.{1,50}$/,
+      inputErrorMessage: '名称长度为1-50个字符',
+    })
+
+    loading.value = true
+    const response = await createWorkflow({ name, description: '' })
+    if (response && response.data) {
+      ElMessage.success('创建成功')
+      // 跳转到编辑页面
+      router.push(`/workflow/${response.data.id}`)
+    }
+  } catch (error) {
+    // 用户取消或请求失败
+    if (error !== 'cancel') {
+      // 请求失败已在 request.js 中统一处理
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
 // 编辑工作流
@@ -136,23 +137,20 @@ const copyWorkflow = async (item) => {
       type: 'info',
     })
 
-    const newWorkflow = {
-      ...item,
-      id: Date.now().toString(),
-      name: `${item.name} (副本)`,
-      status: 'draft',
-      lastModified: new Date().toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+    loading.value = true
+    const response = await copyWorkflowApi(item.id)
+    if (response) {
+      ElMessage.success('复制成功')
+      // 重新获取列表
+      fetchWorkflowList()
     }
-    workflowList.value.unshift(newWorkflow)
-    ElMessage.success('复制成功')
-  } catch {
-    // 用户取消
+  } catch (error) {
+    // 用户取消或请求失败
+    if (error !== 'cancel') {
+      // 请求失败已在 request.js 中统一处理
+    }
+  } finally {
+    loading.value = false
   }
 }
 
@@ -165,23 +163,58 @@ const deleteWorkflow = async (item) => {
       type: 'warning',
     })
 
-    const index = workflowList.value.findIndex((w) => w.id === item.id)
-    if (index > -1) {
-      workflowList.value.splice(index, 1)
+    loading.value = true
+    const response = await deleteWorkflowApi(item.id)
+    if (response) {
       ElMessage.success('删除成功')
+      // 重新获取列表
+      fetchWorkflowList()
     }
-  } catch {
-    // 用户取消
+  } catch (error) {
+    // 用户取消或请求失败
+    if (error !== 'cancel') {
+      // 请求失败已在 request.js 中统一处理
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+// 发布工作流
+const handlePublishWorkflow = async (item) => {
+  try {
+    await ElMessageBox.confirm(`确定要发布工作流"${item.name}"吗？`, '确认发布', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'info',
+    })
+
+    loading.value = true
+    const response = await publishWorkflow(item.id)
+    if (response) {
+      ElMessage.success('发布成功')
+      // 重新获取列表
+      fetchWorkflowList()
+    }
+  } catch (error) {
+    // 用户取消或请求失败
+    if (error !== 'cancel') {
+      // 请求失败已在 request.js 中统一处理
+    }
+  } finally {
+    loading.value = false
   }
 }
 
 // 运行工作流
 const runWorkflow = (item) => {
   ElMessage.info(`正在运行工作流: ${item.name}`)
+  // TODO: 跳转到运行页面或打开运行对话框
 }
 
 // 格式化时间
 const formatTime = (time) => {
+  if (!time) return '-'
   return time
 }
 
@@ -200,16 +233,20 @@ const handleCommand = (command, item) => {
     case 'run':
       runWorkflow(item)
       break
+    case 'publish':
+      handlePublishWorkflow(item)
+      break
   }
 }
 
 onMounted(() => {
   // 加载工作流列表数据
+  fetchWorkflowList()
 })
 </script>
 
 <template>
-  <div class="workflow-view">
+  <div class="workflow-view" v-loading="loading">
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
@@ -217,7 +254,9 @@ onMounted(() => {
         <p class="page-desc">可视化编排 AI 工作流程，实现复杂业务逻辑</p>
       </div>
       <div class="header-right">
-        <el-button type="primary" :icon="Plus" @click="createWorkflow"> 新建工作流 </el-button>
+        <el-button type="primary" :icon="Plus" @click="handleCreateWorkflow">
+          新建工作流
+        </el-button>
       </div>
     </div>
 
@@ -243,14 +282,21 @@ onMounted(() => {
 
     <!-- 工作流列表 -->
     <div class="workflow-list">
-      <div v-if="filteredList.length === 0" class="empty-state">
+      <div v-if="workflowList.length === 0 && !loading" class="empty-state">
         <el-empty description="暂无工作流数据">
-          <el-button type="primary" :icon="Plus" @click="createWorkflow"> 创建第一个工作流 </el-button>
+          <el-button type="primary" :icon="Plus" @click="handleCreateWorkflow">
+            创建第一个工作流
+          </el-button>
         </el-empty>
       </div>
 
       <div v-else class="workflow-grid">
-        <div v-for="item in filteredList" :key="item.id" class="workflow-card" @click="editWorkflow(item.id)">
+        <div
+          v-for="item in workflowList"
+          :key="item.id"
+          class="workflow-card"
+          @click="editWorkflow(item.id)"
+        >
           <div class="card-header">
             <div class="card-title-row">
               <h3 class="card-title">{{ item.name }}</h3>
@@ -271,16 +317,16 @@ onMounted(() => {
             </el-tag>
           </div>
 
-          <p class="card-description">{{ item.description }}</p>
+          <p class="card-description">{{ item.description || '暂无描述' }}</p>
 
           <div class="card-stats">
             <div class="stat-item">
               <span class="stat-label">节点数量</span>
-              <span class="stat-value">{{ item.nodeCount }}</span>
+              <span class="stat-value">{{ item.nodeCount || 0 }}</span>
             </div>
             <div class="stat-item">
               <span class="stat-label">版本</span>
-              <span class="stat-value">{{ item.version }}</span>
+              <span class="stat-value">{{ item.version || '-' }}</span>
             </div>
           </div>
 
@@ -303,12 +349,12 @@ onMounted(() => {
     </div>
 
     <!-- 分页组件 -->
-    <div class="pagination-wrapper" v-if="filteredTotal > 0">
+    <div class="pagination-wrapper" v-if="total > 0">
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
         :page-sizes="[10, 20, 50, 100]"
-        :total="filteredTotal"
+        :total="total"
         layout="total, sizes, prev, pager, next, jumper"
         @size-change="handleSizeChange"
         @current-change="handlePageChange"
