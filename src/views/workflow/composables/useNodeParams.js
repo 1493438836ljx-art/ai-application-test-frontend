@@ -133,8 +133,8 @@ export const getNodeInputParams = (node) => {
   if (node.type === 'textClean') {
     return [
       {
-        name: 'input_file',
-        type: 'File',
+        name: 'input',
+        type: 'File<Excel>',
         required: true,
         description: '需要被清洗的目标xlsx文件',
       },
@@ -180,11 +180,11 @@ export const getNodeInputParams = (node) => {
   // 表格提取节点：从 inputParams 读取
   if (node.type === 'tableExtract') {
     const inputParams = node.inputParams || [
-      { name: 'file', type: 'File', fileType: 'Excel', required: true, description: '需要提取数据的Excel文件' }
+      { name: 'file', type: 'File<Excel>', required: true, description: '需要提取数据的Excel文件' }
     ]
     return inputParams.map((param) => ({
       name: param.name || '',
-      type: formatParamType(param),
+      type: param.type || 'File<Excel>',
       required: param.required,
       description: param.description,
     }))
@@ -250,24 +250,28 @@ export const getNodeInputParams = (node) => {
   }
 
   // 表格生成节点：从 config.inputParams 读取（用户自定义）
+  // 过滤掉变量名为空的参数（正在定义中的变量）
   if (node.type === 'tableGenerate') {
     const inputParams = node.config?.inputParams || []
-    if (inputParams.length === 0) {
+    const validParams = inputParams.filter((param) => param.name && param.name.trim() !== '')
+    if (validParams.length === 0) {
       return [{ name: '-', type: '-', isPlaceholder: true }]
     }
-    return inputParams.map((param) => ({
+    return validParams.map((param) => ({
       name: param.name || '',
       type: formatParamType(param),
     }))
   }
 
   // 结束节点：从 config.inputParams 读取（用户自定义）
+  // 过滤掉变量名为空的参数（正在定义中的变量）
   if (node.type === 'end') {
     const inputParams = node.config?.inputParams || []
-    if (inputParams.length === 0) {
+    const validParams = inputParams.filter((param) => param.name && param.name.trim() !== '')
+    if (validParams.length === 0) {
       return [{ name: '-', type: '-', isPlaceholder: true }]
     }
-    return inputParams.map((param) => ({
+    return validParams.map((param) => ({
       name: param.name || '',
       type: formatParamType(param),
     }))
@@ -282,12 +286,16 @@ export const getNodeOutputParams = (node) => {
   if (!node) return []
 
   // 开始节点：从 outputParams 配置读取
+  // 如果没有定义初始变量，返回空数组（不显示占位符）
+  // 过滤掉变量名为空的参数（正在定义中的变量）
   if (node.type === 'start') {
     const outputParams = node.outputParams || []
-    if (outputParams.length === 0) {
-      return [{ name: '-', type: '-', isPlaceholder: true }]
+    // 过滤掉没有变量名的参数
+    const validParams = outputParams.filter((param) => param.name && param.name.trim() !== '')
+    if (validParams.length === 0) {
+      return []
     }
-    return outputParams.map((param) => ({
+    return validParams.map((param) => ({
       name: param.name || '',
       type: formatParamType(param),
     }))
@@ -302,12 +310,12 @@ export const getNodeOutputParams = (node) => {
     return inputParams
   }
 
-  // 文本清洗节点：输出参数为 output_file
+  // 文本清洗节点：输出参数为 output
   if (node.type === 'textClean') {
     return [
       {
-        name: 'output_file',
-        type: 'File',
+        name: 'output',
+        type: 'File<Excel>',
         description: '被清洗之后的xlsx文件',
       },
     ]
@@ -320,16 +328,28 @@ export const getNodeOutputParams = (node) => {
     ]
   }
 
-  // 循环节点：从 outputParams 读取
+  // 循环节点：只返回 config.loopOutputParams 中的用户自定义输出
+  // 注意：current_item 和 current_index 是循环体内部使用的变量，不对外暴露
+  // 如果没有定义输出变量，返回空数组（不显示占位符）
+  // 过滤掉变量名为空的参数（正在定义中的变量）
   if (node.type === 'loop') {
-    const outputParams = node.outputParams || []
-    if (outputParams.length === 0) {
-      return [{ name: '-', type: '-', isPlaceholder: true }]
-    }
-    return outputParams.map((param) => ({
-      name: param.name || '',
-      type: formatParamType(param),
-    }))
+    const outputs = []
+
+    // 用户自定义输出参数（从 config.loopOutputParams 读取）
+    const loopOutputParams = node.config?.loopOutputParams || []
+    loopOutputParams.forEach((param) => {
+      if (param.name && param.name.trim() !== '') {
+        // 自定义输出参数类型为 Array<elementType>
+        const elementType = param.elementType || 'String'
+        outputs.push({
+          name: param.name || '',
+          type: `Array<${elementType}>`,
+        })
+      }
+    })
+
+    // 没有定义输出变量时返回空数组，不显示占位符
+    return outputs
   }
 
   // HTTPS/HTTP接口调用节点
@@ -368,12 +388,12 @@ export const getNodeOutputParams = (node) => {
     ]
   }
 
-  // 表格生成节点：输出参数为 output_excel (File/Excel)
+  // 表格生成节点：输出参数为 output_excel (File<Excel>)
   if (node.type === 'tableGenerate') {
     return [
       {
         name: 'output_excel',
-        type: 'File(Excel)',
+        type: 'File<Excel>',
         description: '生成的表格文件',
       },
     ]

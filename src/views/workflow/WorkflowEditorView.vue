@@ -190,6 +190,7 @@ const loadNodeTypes = async () => {
 // 节点功能描述映射
 const nodeDescriptions = {
   textClean: '对文本数据进行清洗、过滤和标准化处理',
+  tableExtract: '从Excel表格中提取数据，支持指定工作表、行列范围和列配置',
   tableGenerate: '根据输入数据生成Excel表格文件',
 }
 
@@ -1074,6 +1075,8 @@ const addNode = (type) => {
 // 重命名节点
 const renameDialogVisible = ref(false)
 const newNodeName = ref('')
+const isEditingNodeName = ref(false)
+const editingNodeName = ref('')
 
 // 调试状态
 const debugState = reactive({
@@ -1578,6 +1581,37 @@ const confirmRename = () => {
   selectedNode.value.name = newNodeName.value.trim()
   renameDialogVisible.value = false
   ElMessage.success('重命名成功')
+}
+
+// 双击编辑节点名称
+const nodeNameInput = ref(null)
+
+const startEditNodeName = () => {
+  if (!selectedNode.value) return
+  // 排除开始节点、结束节点和循环体节点
+  if (['start', 'end', 'loopBodyCanvas'].includes(selectedNode.value.type)) return
+  editingNodeName.value = selectedNode.value.name
+  isEditingNodeName.value = true
+  // 自动聚焦输入框
+  nextTick(() => {
+    nodeNameInput.value?.focus()
+    nodeNameInput.value?.select()
+  })
+}
+
+// 完成节点名称编辑
+const finishEditNodeName = () => {
+  if (!selectedNode.value) return
+  if (editingNodeName.value.trim()) {
+    selectedNode.value.name = editingNodeName.value.trim()
+  }
+  isEditingNodeName.value = false
+}
+
+// 取消节点名称编辑
+const cancelEditNodeName = () => {
+  isEditingNodeName.value = false
+  editingNodeName.value = ''
 }
 
 // 创建节点副本
@@ -2104,12 +2138,115 @@ const handleFileUpload = (file, field) => {
 }
 
 // 显示变量选择器
-const showVariableSelector = (field, multiSelect = false) => {
+// 变量选择器类型过滤
+const variableSelectorFilterType = ref(null)
+const variableSelectorFilterTypes = ref(null) // 支持多类型过滤
+
+// 判断两个类型是否匹配
+const isTypeMatch = (varType, filterType) => {
+  if (!filterType) return true // 没有过滤类型，显示所有变量
+
+  // 完全匹配
+  if (varType === filterType) return true
+
+  // File 类型匹配（File 匹配 File<Excel>，File<Excel> 匹配 File<Excel>）
+  if (filterType.startsWith('File') && varType.startsWith('File')) return true
+
+  // Array 类型匹配
+  if (filterType.startsWith('Array') && varType.startsWith('Array')) return true
+
+  // Dictionary 类型匹配
+  if (filterType.startsWith('Dictionary') && varType.startsWith('Dictionary')) return true
+
+  return false
+}
+
+// 判断类型是否匹配多类型过滤
+const isTypeMatchMultiple = (varType, filterTypes) => {
+  if (!filterTypes || filterTypes.length === 0) return true
+  return filterTypes.some(filterType => isTypeMatch(varType, filterType))
+}
+
+// 获取过滤后的前置节点输出变量
+const getFilteredUpstreamOutputs = () => {
+  const outputs = getUpstreamNodeOutputs()
+
+  // 多类型过滤
+  if (variableSelectorFilterTypes.value && variableSelectorFilterTypes.value.length > 0) {
+    return outputs.filter(item => isTypeMatchMultiple(item.type, variableSelectorFilterTypes.value))
+  }
+
+  // 单类型过滤
+  if (variableSelectorFilterType.value) {
+    return outputs.filter(item => isTypeMatch(item.type, variableSelectorFilterType.value))
+  }
+
+  return outputs
+}
+
+const showVariableSelector = (field, multiSelect = false, filterType = null) => {
   variableSelectorField.value = field
   isMultiSelectMode.value = multiSelect
+  variableSelectorFilterType.value = filterType
+  variableSelectorFilterTypes.value = null
   selectedColumns.value = new Set() // 重置多选状态
   expandedVariableIndex.value = new Set() // 重置展开状态
   showVariableSelectorDialog.value = true
+}
+
+// 显示变量选择器（支持多类型过滤）
+const showVariableSelectorWithTypes = (field, filterTypes, enableMultiSelectForDict = false) => {
+  variableSelectorField.value = field
+  // 如果过滤类型包含 Dictionary 且启用了���选，则开启多选模式
+  isMultiSelectMode.value = enableMultiSelectForDict && filterTypes.some(t => t === 'Dictionary' || t.startsWith('Dictionary'))
+  variableSelectorFilterType.value = null
+  variableSelectorFilterTypes.value = filterTypes
+  selectedColumns.value = new Set()
+  expandedVariableIndex.value = new Set()
+  showVariableSelectorDialog.value = true
+}
+
+// 获取 cols 变量的动态类型
+const getColsDynamicType = () => {
+  if (!selectedNode.value) return 'String'
+  const colsValue = selectedNode.value.config.colsValue
+  if (!colsValue) return 'String'
+
+  // 如果是变量引用（以 ${ 开头）
+  if (colsValue.startsWith('${')) {
+    // 尝试从已存储的类型信息获取
+    const colsType = selectedNode.value.config.colsType
+    if (colsType) return colsType
+
+    // 从前置节点输出中查找变量类型
+    const upstreamOutputs = getUpstreamNodeOutputs()
+    const matchedOutput = upstreamOutputs.find(item => item.variable === colsValue)
+    if (matchedOutput) {
+      return matchedOutput.type
+    }
+  }
+
+  // 默认返回 String
+  return 'String'
+}
+
+// 当 cols 值变化时，更新类型
+const onColsValueChange = () => {
+  if (!selectedNode.value) return
+  const colsValue = selectedNode.value.config.colsValue
+
+  // 如果不是变量引用，清除存储的类型
+  if (!colsValue || !colsValue.startsWith('${')) {
+    selectedNode.value.config.colsType = 'String'
+    return
+  }
+
+  // 如果是变量引用，从前置节点输出中查找类型
+  const upstreamOutputs = getUpstreamNodeOutputs()
+  const matchedOutput = upstreamOutputs.find(item => item.variable === colsValue)
+  if (matchedOutput) {
+    selectedNode.value.config.colsType = matchedOutput.type
+  }
 }
 
 // 显示裁判模型节点的变量选择器
@@ -2346,7 +2483,12 @@ const selectVariable = (variable) => {
       if (selectedOutput) {
         const varType = selectedOutput.type || ''
         const param = selectedNode.value.config.inputParams[index]
-        if (varType.includes('Array') || varType.includes('[')) {
+        if (varType.includes('File')) {
+          // File 类型，保留完整类型信息如 File<Excel>
+          param.type = varType
+          delete param.elementType
+          delete param.dictionaryType
+        } else if (varType.includes('Array') || varType.includes('[')) {
           param.type = 'Array'
           param.elementType = 'String'
         } else if (varType.includes('Dictionary') || varType.includes('数据字典')) {
@@ -2372,7 +2514,12 @@ const selectVariable = (variable) => {
       if (selectedOutput) {
         const varType = selectedOutput.type || ''
         const param = selectedNode.value.config.inputParams[index]
-        if (varType.includes('Array') || varType.includes('[')) {
+        if (varType.includes('File')) {
+          // File 类型，保留完整类型信息如 File<Excel>
+          param.type = varType
+          delete param.elementType
+          delete param.dictionaryType
+        } else if (varType.includes('Array') || varType.includes('[')) {
           param.type = 'Array'
           param.elementType = 'String'
         } else if (varType.includes('Dictionary') || varType.includes('数据字典')) {
@@ -2387,8 +2534,26 @@ const selectVariable = (variable) => {
     }
   }
 
+  // 处理文本清洗节点的 cols 变量选择和类型自动调整
+  if (selectedNode.value.type === 'textClean' && variableSelectorField.value === 'colsValue') {
+    // 检查是否是多选模式（数据字典多列选择）
+    if (isMultiSelectMode.value && variable.includes(',')) {
+      // 多选模式：类型为 Dictionary
+      selectedNode.value.config.colsType = 'Dictionary'
+    } else {
+      // 单选模式：从前置节点输出中查找变量类型
+      const upstreamOutputs = getUpstreamNodeOutputs()
+      const selectedOutput = upstreamOutputs.find((item) => item.variable === variable)
+      if (selectedOutput) {
+        selectedNode.value.config.colsType = selectedOutput.type || 'String'
+      }
+    }
+  }
+
   showVariableSelectorDialog.value = false
   variableSelectorField.value = null
+  variableSelectorFilterType.value = null
+  variableSelectorFilterTypes.value = null
   loopOutputVariableIndex.value = null
   judgeModelTypeField.value = null
   tableGenerateVariableIndex.value = null
@@ -2521,12 +2686,14 @@ const initTextCleanConfig = () => {
     selectedNode.value.config.textContent = ''
     selectedNode.value.config.datasetId = ''
     selectedNode.value.config.datasetFields = [] // 支持多选字段
-    // 清洗规则默认值
+    // 清洗规则默认值 - Boolean类型全部默认为true
     selectedNode.value.config.removeExtraSpaces = true
-    selectedNode.value.config.removeHtmlTags = false
-    selectedNode.value.config.removeSpecialChars = false
+    selectedNode.value.config.removeHtmlTags = true
+    selectedNode.value.config.removeSpecialChars = true
     selectedNode.value.config.normalizeNewlines = true
     selectedNode.value.config.trimWhitespace = true
+    selectedNode.value.config.standardizedNewlineChar = true
+    selectedNode.value.config.trimFrontBack = true
     // 输出格式根据输入类型自动确定，无需手动配置
   }
 }
@@ -2609,6 +2776,9 @@ const handleActionBtnDown = (node, event) => {
 
   const port = outputParams[0]
 
+  // 立即禁用文本选择，防止长按检测期间文字被选中
+  document.body.style.userSelect = 'none'
+
   // 获取按钮的实际 DOM 位置，确保连线起点与按钮中心一致
   const btnPosition = getActionBtnDomPosition(node.id)
   let x, y
@@ -2666,20 +2836,21 @@ const closeAddPopover = () => {
 // 处理按钮释放
 const handleActionBtnUp = (node, event) => {
   // 清除长按计时器
-  const wasShortPress = longPressState.timer !== null
+  const hadTimer = longPressState.timer !== null
   if (longPressState.timer) {
     clearTimeout(longPressState.timer)
     longPressState.timer = null
   }
 
-  // 只有短按才在按钮释放时显示弹窗（长按拖拽由 stopConnection 处理）
-  if (wasShortPress && !longPressState.hasTriggeredDrag) {
-    showAddPopover(node, event)
-  }
-
-  // 只有在未触发拖拽的情况下才重置状态（长按拖拽由 stopConnection 重置）
+  // 如果没有触发长按拖拽，则显示添加节点弹窗
   if (!longPressState.hasTriggeredDrag) {
+    // 直接显示弹窗，不再检查 outputCount
+    event.stopPropagation()
+    showAddNodePopover.value = node.id
+    popoverPosition.value = { x: event.clientX, y: event.clientY }
     longPressState.isLongPress = false
+    // 恢复文本选择
+    document.body.style.userSelect = ''
   }
 }
 
@@ -3128,17 +3299,59 @@ const stopConnection = (event) => {
   // 恢复文本选择
   document.body.style.userSelect = ''
 
-  // 如果触发了拖拽（长按计时器执行），则直接显示添加节点弹窗
+  // 如果触发了拖拽（长按计时器执行），检测是否拖拽到了某个节点的输入端口
   if (longPressState.hasTriggeredDrag) {
-    const node = longPressState.node
-    if (node) {
-      // 使用鼠标释放时的位置显示弹窗
-      const mockEvent = {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        stopPropagation: () => {},
+    const sourceNode = longPressState.node
+
+    // 检测鼠标释放位置是否在某个节点的输入端口上
+    const targetElement = event.target
+    const inputPort = targetElement?.closest('.input-port')
+
+    if (inputPort && sourceNode) {
+      // 找到输入端口所属的节点
+      const nodeElement = inputPort.closest('[data-node-id]')
+      if (nodeElement) {
+        const targetNodeId = nodeElement.getAttribute('data-node-id')
+        const targetNode = nodes.value.find((n) => n.id === targetNodeId)
+
+        if (targetNode && targetNode.id !== sourceNode.id) {
+          // 创建连线
+          const newConnection = {
+            id: `conn-${Date.now()}`,
+            sourceId: sourceNode.id,
+            sourceParamIndex: 0,
+            targetId: targetNode.id,
+            targetParamIndex: 0,
+          }
+
+          // 检查是否已存在相同连线
+          const existingConnection = connections.value.find(
+            (c) =>
+              c.sourceId === sourceNode.id &&
+              c.targetId === targetNode.id
+          )
+
+          if (!existingConnection) {
+            connections.value.push(newConnection)
+          }
+
+          // 阻止事件传播
+          if (event) {
+            event.stopPropagation()
+          }
+
+          drawingConnection.value = null
+          longPressState.isLongPress = false
+          longPressState.hasTriggeredDrag = false
+          return
+        }
       }
-      showAddPopover(node, mockEvent)
+    }
+
+    // 没有拖拽到输入端口，显示添加节点弹窗
+    if (sourceNode) {
+      showAddNodePopover.value = sourceNode.id
+      popoverPosition.value = { x: event.clientX, y: event.clientY }
     }
 
     // 阻止事件传播，避免 deselectAll 被调用导致弹窗关闭
@@ -3487,6 +3700,19 @@ onMounted(async () => {
             config: nodeConfig
           }
 
+          // 如果是循环节点，添加默认的 outputParams 和 config.loopOutputParams
+          if (node.type === 'loop') {
+            if (baseNode.outputParams.length === 0) {
+              baseNode.outputParams = [
+                { name: 'current_item', type: 'Any' },
+                { name: 'current_index', type: 'Number' }
+              ]
+            }
+            if (!baseNode.config.loopOutputParams) {
+              baseNode.config.loopOutputParams = []
+            }
+          }
+
           // 如果是循环体节点，添加完整属性
           if (node.type === 'loopBodyCanvas') {
             baseNode.width = nodeConfig.width || 500
@@ -3655,7 +3881,7 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-content">
-      <div ref="canvasContainerRef" class="canvas-container" :class="{ dragging: canvasDragState.isDragging }" @click="handleCanvasClick" @mousedown="startDragCanvas">
+      <div ref="canvasContainerRef" class="canvas-container" :class="{ dragging: canvasDragState.isDragging, 'drawing-connection': drawingConnection }" @click="handleCanvasClick" @mousedown="startDragCanvas">
         <div
           ref="canvasRef"
           class="canvas"
@@ -4257,7 +4483,23 @@ onUnmounted(() => {
       <div v-if="selectedNode" class="config-panel">
         <div class="panel-header">
           <div class="panel-title-area">
-            <span class="panel-node-name">{{ selectedNode.name }}</span>
+            <!-- 编辑模式 -->
+            <input
+              v-if="isEditingNodeName"
+              v-model="editingNodeName"
+              class="panel-node-name-input"
+              @blur="finishEditNodeName"
+              @keyup.enter="finishEditNodeName"
+              @keyup.escape="cancelEditNodeName"
+              ref="nodeNameInput"
+            />
+            <!-- 显示模式 -->
+            <span
+              v-else
+              class="panel-node-name"
+              :class="{ 'editable': !['start', 'end', 'loopBodyCanvas'].includes(selectedNode.type) }"
+              @dblclick="startEditNodeName"
+            >{{ selectedNode.name }}</span>
             <span v-if="nodeDescriptions[selectedNode.type]" class="panel-node-desc">
               {{ nodeDescriptions[selectedNode.type] }}
             </span>
@@ -4633,18 +4875,18 @@ onUnmounted(() => {
               <div class="io-section-content">
                 <el-table
                   :data="[
-                    { name: 'input_file', type: 'File', required: false, desc: '需要被清洗的目标xlsx文件', field: 'inputFileValue' },
-                    { name: 'cols', type: 'Array<String>', required: true, desc: '指定xlsx文件中需要清洗的列', field: 'colsValue' },
-                    { name: 'remove_extra_spaces', type: 'Boolean', required: false, desc: '是否去除多余空格', field: 'removeExtraSpaces' },
-                    { name: 'remove_html_tags', type: 'Boolean', required: false, desc: '是否去除HTML标签', field: 'removeHtmlTags' },
-                    { name: 'remove_special_chars', type: 'Boolean', required: false, desc: '是否去除特殊字符', field: 'removeSpecialChars' },
-                    { name: 'standardized_newline_char', type: 'Boolean', required: false, desc: '是否标准化换行符', field: 'standardizedNewlineChar' },
-                    { name: 'trim_front_back', type: 'Boolean', required: false, desc: '是否去除首尾空白', field: 'trimFrontBack' }
+                    { name: 'input', type: 'File<Excel>', required: false, desc: '需要被清洗的目标xlsx文件', field: 'inputFileValue' },
+                    { name: 'cols', type: 'cols', required: true, desc: '指定xlsx文件中需要清洗的列（支持数据字典或String）', field: 'colsValue' },
+                    { name: 'rm_extra_spaces', type: 'Boolean', required: false, desc: '是否去除多余空格', field: 'removeExtraSpaces' },
+                    { name: 'rm_html_tags', type: 'Boolean', required: false, desc: '是否去除HTML标签', field: 'removeHtmlTags' },
+                    { name: 'rm_special_chars', type: 'Boolean', required: false, desc: '是否去除特殊字符', field: 'removeSpecialChars' },
+                    { name: 'std_newline', type: 'Boolean', required: false, desc: '是否标准化换行符', field: 'standardizedNewlineChar' },
+                    { name: 'trim_whitespace', type: 'Boolean', required: false, desc: '是否去除首尾空白', field: 'trimFrontBack' }
                   ]"
                   size="small"
                   class="io-table"
                 >
-                  <el-table-column label="变量名" min-width="180">
+                  <el-table-column label="变量名" min-width="150">
                     <template #default="{ row }">
                       <div class="param-name-cell">
                         <span v-if="row.required" class="required-mark">*</span>
@@ -4655,15 +4897,29 @@ onUnmounted(() => {
                       </div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="类型" width="120" align="center">
+                  <el-table-column label="类型" width="100" align="center">
                     <template #default="{ row }">
-                      <span class="param-type-tag">{{ row.type }}</span>
+                      <!-- cols 变量：动态显示类型 -->
+                      <span v-if="row.type === 'cols'" class="param-type-tag">{{ getColsDynamicType() }}</span>
+                      <!-- 其他变量：显示固定类型 -->
+                      <span v-else class="param-type-tag">{{ row.type }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="变量值" min-width="160">
+                  <el-table-column label="变量值" min-width="150">
                     <template #default="{ row }">
+                      <!-- cols 变量：特殊处理，关联时只筛选 Dictionary 和 String，Dictionary 支持多选 -->
+                      <div v-if="row.type === 'cols'" class="param-value-input">
+                        <el-input
+                          v-model="selectedNode.config[row.field]"
+                          placeholder="输入或引用参数值"
+                          size="small"
+                          class="param-input-with-btn"
+                          @input="onColsValueChange"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出（仅数据字典和String）" @click="showVariableSelectorWithTypes(row.field, ['Dictionary', 'String'], true)"><Link /></el-icon>
+                      </div>
                       <!-- Boolean 类型：下拉框 + 关联选择 -->
-                      <div v-if="row.type === 'Boolean'" class="param-value-input">
+                      <div v-else-if="row.type === 'Boolean'" class="param-value-input">
                         <el-select
                           v-model="selectedNode.config[row.field]"
                           placeholder="选择"
@@ -4674,10 +4930,10 @@ onUnmounted(() => {
                           <el-option label="true" :value="true" />
                           <el-option label="false" :value="false" />
                         </el-select>
-                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, false, row.type)"><Link /></el-icon>
                       </div>
                       <!-- File 类型：只显示上传按钮和关联按钮 -->
-                      <div v-else-if="row.type === 'File'" class="param-value-input file-input">
+                      <div v-else-if="row.type.includes('File')" class="param-value-input file-input">
                         <span v-if="selectedNode.config[row.field]" class="file-value">{{ selectedNode.config[row.field] }}</span>
                         <span v-else class="file-placeholder">未选择文件</span>
                         <div class="file-actions">
@@ -4688,7 +4944,7 @@ onUnmounted(() => {
                           >
                             <el-icon class="action-icon upload-icon" title="上传文件"><Upload /></el-icon>
                           </el-upload>
-                          <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
+                          <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, false, row.type)"><Link /></el-icon>
                         </div>
                       </div>
                       <!-- 其他类型：输入框 + 关联选择 -->
@@ -4699,7 +4955,7 @@ onUnmounted(() => {
                           size="small"
                           class="param-input-with-btn"
                         />
-                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, row.type && row.type.startsWith('Array'))"><Link /></el-icon>
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, false, row.type)"><Link /></el-icon>
                       </div>
                     </template>
                   </el-table-column>
@@ -4715,7 +4971,7 @@ onUnmounted(() => {
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="[{ name: 'output_file', type: `File`, desc: '被清洗之后的xlsx文件' }]"
+                  :data="[{ name: 'output', type: 'File<Excel>', desc: '被清洗之后的xlsx文件' }]"
                   size="small"
                   class="io-table"
                 >
@@ -4750,7 +5006,7 @@ onUnmounted(() => {
               <div class="io-section-content">
                 <el-table
                   :data="[
-                    { name: 'file', type: 'File', required: true, desc: '需要提取数据的表格文件', field: 'inputFileValue' }
+                    { name: 'file', type: 'File<Excel>', required: true, desc: '需要提取数据的表格文件', field: 'inputFileValue' }
                   ]"
                   size="small"
                   class="io-table"
@@ -4785,7 +5041,7 @@ onUnmounted(() => {
                           >
                             <el-icon class="action-icon upload-icon" title="上传文件"><Upload /></el-icon>
                           </el-upload>
-                          <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field)"><Link /></el-icon>
+                          <el-icon class="action-icon link-icon" title="关联节点输出" @click="showVariableSelector(row.field, false, row.type)"><Link /></el-icon>
                         </div>
                       </div>
                     </template>
@@ -5113,7 +5369,7 @@ onUnmounted(() => {
               </div>
               <div class="io-section-content">
                 <el-table
-                  :data="[{ name: 'output_excel', type: 'File(Excel)', desc: '生成的表格文件' }]"
+                  :data="[{ name: 'output_excel', type: 'File<Excel>', desc: '生成的表格文件' }]"
                   size="small"
                   class="io-table"
                 >
@@ -5216,11 +5472,11 @@ onUnmounted(() => {
       class="variable-selector-dialog"
     >
       <div class="variable-list">
-        <div v-if="getUpstreamNodeOutputs().length === 0" class="no-variables">
+        <div v-if="getFilteredUpstreamOutputs().length === 0" class="no-variables">
           暂无可关联的前置节点输出变量
         </div>
         <div
-          v-for="(item, index) in getUpstreamNodeOutputs()"
+          v-for="(item, index) in getFilteredUpstreamOutputs()"
           :key="index"
           class="variable-item"
           :class="{ 'is-dictionary': isDictionaryType(item.type) }"
@@ -5444,10 +5700,23 @@ onUnmounted(() => {
   user-select: none;
 }
 
+/* 绘制连线时，输入端口显示可连接样式 */
+.canvas-container.drawing-connection .input-port {
+  cursor: crosshair;
+  transition: all 0.2s;
+}
+
+.canvas-container.drawing-connection .input-port:hover {
+  background: #22d3ee;
+  transform: translateY(-50%) scale(1.2);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+}
+
 .canvas {
   position: relative;
   min-width: 100%;
   min-height: 100%;
+  user-select: none;
 }
 
 .connections-layer {
@@ -5541,6 +5810,7 @@ onUnmounted(() => {
   cursor: move;
   transition: border-color 0.2s, box-shadow 0.2s;
   z-index: 10; /* 在底层连线上面，顶层连线下面 */
+  user-select: none;
 }
 
 .flow-node:hover {
@@ -5915,6 +6185,26 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: #1f2937;
+}
+
+.panel-node-name.editable {
+  cursor: pointer;
+}
+
+.panel-node-name.editable:hover {
+  color: #6366f1;
+}
+
+.panel-node-name-input {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  border: 1px solid #6366f1;
+  border-radius: 4px;
+  padding: 2px 8px;
+  outline: none;
+  background: #fff;
+  width: 200px;
 }
 
 .panel-node-desc {
