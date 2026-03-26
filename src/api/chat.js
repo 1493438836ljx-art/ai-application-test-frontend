@@ -21,12 +21,15 @@ export async function sendMessage(params) {
 /**
  * 流式发送消息（SSE）
  * @param {Object} params - 发送参数
- * @param {function} onChunk - 接收到数据块时的回调
- * @param {function} onDone - 完成时的回调
- * @param {function} onError - 错误时的回调
+ * @param {Object} callbacks - 回调函数集合
+ * @param {function} callbacks.onStart - 会话开始时的回调
+ * @param {function} callbacks.onChunk - 接收到数据块时的回调
+ * @param {function} callbacks.onAction - 接收到action事件时的回调（如workflow_update）
+ * @param {function} callbacks.onDone - 完成时的回调
+ * @param {function} callbacks.onError - 错误时的回调
  * @returns {Promise<void>}
  */
-export async function sendMessageStream(params, { onChunk, onDone, onError }) {
+export async function sendMessageStream(params, { onStart, onChunk, onAction, onDone, onError }) {
   try {
     const response = await fetch(`${BASE_URL}/stream`, {
       method: 'POST',
@@ -61,10 +64,17 @@ export async function sendMessageStream(params, { onChunk, onDone, onError }) {
           if (data) {
             try {
               const parsed = JSON.parse(data)
+
+              // 根据事件类型分发回调
               if (parsed.type === 'start') {
+                onStart && onStart(parsed)
+                // 兼容旧的 onChunk 方式
                 onChunk && onChunk({ type: 'start', conversationId: parsed.conversationId })
               } else if (parsed.type === 'chunk') {
                 onChunk && onChunk({ type: 'chunk', content: parsed.content })
+              } else if (parsed.type === 'workflow_update') {
+                // 处理工作流更新事件
+                onAction && onAction(parsed)
               } else if (parsed.type === 'done') {
                 onDone && onDone(parsed)
               } else if (parsed.type === 'error') {

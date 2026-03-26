@@ -10,9 +10,13 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  workflowId: {
+    type: [String, Number],
+    default: null,
+  },
 })
 
-const emit = defineEmits(['update:visible', 'close'])
+const emit = defineEmits(['update:visible', 'close', 'workflow-updated'])
 
 const isOpen = computed({
   get: () => props.visible,
@@ -165,24 +169,51 @@ const sendMessage = async (content = null) => {
   isTyping.value = true
 
   try {
+    // 构建上下文信息
+    const contextData = { source: 'workflow-editor' }
+    if (props.workflowId) {
+      contextData.workflowId = props.workflowId
+    }
+
     // 使用流式API
     await sendMessageStream(
       {
         conversationId: currentConversationId.value,
         message: messageContent,
-        context: { source: 'workflow-editor' },
+        context: contextData,
       },
       {
+        onStart: (data) => {
+          currentConversationId.value = data.conversationId
+        },
         onChunk: (data) => {
-          if (data.type === 'start') {
-            currentConversationId.value = data.conversationId
-          } else if (data.type === 'chunk') {
+          if (data.type === 'chunk') {
             // 找到AI消息并追加内容
             const msg = messages.value.find(m => m.id === aiMessageId)
             if (msg) {
               msg.content += data.content
               scrollToBottom()
             }
+          }
+        },
+        onAction: (data) => {
+          // 处理 workflow_update 事件
+          if (data.type === 'workflow_update') {
+            // 通知父组件工作流已更新
+            emit('workflow-updated', {
+              workflowId: data.workflowId,
+              nodes: data.nodes,
+            })
+
+            // 在聊天中显示系统提示
+            const systemMessage = {
+              id: Date.now(),
+              type: 'system',
+              content: '工作流节点配置已更新',
+              time: new Date(),
+            }
+            messages.value.push(systemMessage)
+            scrollToBottom()
           }
         },
         onDone: (data) => {

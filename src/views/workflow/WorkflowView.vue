@@ -19,6 +19,8 @@ import {
   deleteWorkflow as deleteWorkflowApi,
   copyWorkflow as copyWorkflowApi,
   publishWorkflow,
+  getDefaultWorkflow,
+  getWorkflowDetail,
 } from '@/api/workflow'
 
 const router = useRouter()
@@ -53,10 +55,10 @@ const fetchWorkflowList = async () => {
       status: statusFilter.value,
     }
     const response = await getWorkflowList(params)
-    // 假设后端返回格式为 { data: { list: [], total: 0 } }
-    if (response && response.data) {
-      workflowList.value = response.data.list || []
-      total.value = response.data.total || 0
+    // 后端返回的是 Spring Data Page 对象: { content: [], totalElements: 0 }
+    if (response) {
+      workflowList.value = response.content || []
+      total.value = response.totalElements || 0
     }
   } catch (error) {
     // 错误已在 request.js 中统一处理
@@ -107,7 +109,61 @@ const handleCreateWorkflow = async () => {
     })
 
     loading.value = true
-    const response = await createWorkflow({ name, description: '' })
+
+    // 先获取默认工作流数据
+    let defaultData = {
+      nodes: [],
+      connections: [],
+      associations: []
+    }
+
+    try {
+      const defaultWorkflow = await getDefaultWorkflow()
+      if (defaultWorkflow) {
+        // 映射默认工作流的节点数据
+        defaultData.nodes = (defaultWorkflow.nodes || []).map(node => ({
+          nodeUuid: node.nodeUuid,
+          type: node.type,
+          name: node.name,
+          positionX: node.positionX,
+          positionY: node.positionY,
+          inputPorts: node.inputPorts,
+          outputPorts: node.outputPorts,
+          inputParams: node.inputParams,
+          outputParams: node.outputParams,
+          config: node.config
+        }))
+
+        // 映射连接数据 - 使用后端期望的字段名
+        defaultData.connections = (defaultWorkflow.connections || []).map(conn => ({
+          sourceNodeUuid: conn.sourceNodeUuid || conn.sourceNodeId,
+          sourcePortId: conn.sourcePortId,
+          targetNodeUuid: conn.targetNodeUuid || conn.targetNodeId,
+          targetPortId: conn.targetPortId,
+          sourceParamIndex: conn.sourceParamIndex,
+          targetParamIndex: conn.targetParamIndex
+        }))
+
+        // 映射关联数据 - 使用后端期望的字段名
+        defaultData.associations = (defaultWorkflow.associations || []).map(assoc => ({
+          loopNodeUuid: assoc.loopNodeUuid || assoc.loopNodeId,
+          bodyNodeUuid: assoc.bodyNodeUuid || assoc.bodyNodeId,
+          associationType: assoc.associationType
+        }))
+      }
+    } catch (error) {
+      console.warn('获取默认工作流失败，将创建空工作流:', error)
+    }
+
+    // 创建工作流，包含默认数据
+    const response = await createWorkflow({
+      name,
+      description: '',
+      nodes: defaultData.nodes,
+      connections: defaultData.connections,
+      associations: defaultData.associations
+    })
+
     if (response && response.data) {
       ElMessage.success('创建成功')
       // 跳转到编辑页面

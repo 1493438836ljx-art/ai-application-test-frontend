@@ -1243,6 +1243,45 @@ const aiChatIsTyping = ref(false)
 const aiChatMessagesRef = ref(null)
 const aiChatConversationId = ref(null)
 
+// AI聊天框拖拽调整高度
+const aiChatHeight = ref(300)
+const aiChatMinHeight = 150
+const aiChatMaxHeight = 600
+const isDraggingAiChat = ref(false)
+
+// 开始拖拽AI聊天框
+const startDragAiChat = (e) => {
+  e.stopPropagation()
+  e.preventDefault()
+  isDraggingAiChat.value = true
+  document.addEventListener('mousemove', onDragAiChat)
+  document.addEventListener('mouseup', stopDragAiChat)
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'ns-resize'
+}
+
+// 拖拽中
+const onDragAiChat = (e) => {
+  if (!isDraggingAiChat.value) return
+  e.preventDefault()
+  const panel = document.querySelector('.ai-chat-panel')
+  if (!panel) return
+  const panelRect = panel.getBoundingClientRect()
+  const newHeight = panelRect.bottom - e.clientY
+  if (newHeight >= aiChatMinHeight && newHeight <= aiChatMaxHeight) {
+    aiChatHeight.value = newHeight
+  }
+}
+
+// 停止拖拽
+const stopDragAiChat = () => {
+  isDraggingAiChat.value = false
+  document.removeEventListener('mousemove', onDragAiChat)
+  document.removeEventListener('mouseup', stopDragAiChat)
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+}
+
 // 切换AI聊天框展开/折叠
 const toggleAiChat = () => {
   aiChatExpanded.value = !aiChatExpanded.value
@@ -1294,7 +1333,10 @@ const sendAiMessage = async () => {
       {
         conversationId: aiChatConversationId.value,
         message: content,
-        context: { source: 'workflow-editor' },
+        context: {
+          source: 'workflow-editor',
+          workflowId: workflow.id,  // 传递工作流ID，用于多轮会话
+        },
       },
       {
         onChunk: (data) => {
@@ -1309,7 +1351,13 @@ const sendAiMessage = async () => {
             }
           }
         },
-        onDone: (data) => {
+        onAction: (data) => {
+          // 处理工作流更新事件
+          if (data.type === 'workflow_update') {
+            handleWorkflowUpdated(data)
+          }
+        },
+        onDone: async (data) => {
           aiChatIsTyping.value = false
           const msg = aiChatMessages.value.find(m => m.id === aiMessageId)
           if (msg) {
@@ -1317,6 +1365,9 @@ const sendAiMessage = async () => {
             msg.messageUuid = data.messageUuid
           }
           nextTick(() => scrollAiChatToBottom())
+
+          // AI 回答完成后，刷新工作流数据
+          await loadWorkflowData()
         },
         onError: (error) => {
           aiChatIsTyping.value = false
@@ -1326,6 +1377,12 @@ const sendAiMessage = async () => {
             msg.isStreaming = false
           }
           nextTick(() => scrollAiChatToBottom())
+        },
+        // 新增 onAction 回调处理 workflow_update 事件
+        onAction: (data) => {
+          if (data.type === 'workflow_update') {
+            handleWorkflowUpdated(data)
+          }
         },
       }
     )
@@ -1372,10 +1429,46 @@ const clearAiChat = () => {
     {
       id: Date.now(),
       type: 'ai',
-      content: '对话已清空，有什么新问题吗？',
+      content: '对话已清空，有什么新问题吗?',
       time: new Date(),
     },
   ]
+}
+
+// 处理工作流更新事件（来自 AI 助手）
+const handleWorkflowUpdated = (data) => {
+  console.log('收到工作流更新事件:', data)
+
+
+  if (!data || !data.nodes) {
+    console.warn('工作流更新数据格式不正确', data)
+    return
+  }
+
+  // 遍历更新的节点，应用新配置
+  data.nodes.forEach((nodeUpdate) => {
+    // 根据 nodeUuid 查找对应的节点
+    const nodeIndex = nodes.value.findIndex(n => n.nodeUuid === nodeUpdate.nodeUuid)
+    if (nodeIndex !== -1) {
+      const node = nodes.value[nodeIndex]
+      // 更新节点配置
+      if (nodeUpdate.config) {
+        node.config = typeof nodeUpdate.config === 'string'
+          ? nodeUpdate.config
+          : JSON.stringify(nodeUpdate.config)
+      }
+      console.log('已更新节点配置:', node.name, nodeUpdate.config)
+    }
+  })
+
+  // 显示系统提示消息
+  aiChatMessages.value.push({
+    id: Date.now(),
+    type: 'system',
+    content: '工作流节点配置已更新',
+    time: new Date(),
+  })
+  nextTick(() => scrollAiChatToBottom())
 }
 
 // 处理AI聊天输入回车
@@ -3629,6 +3722,137 @@ const handleKeydown = (event) => {
   }
 }
 
+// 加载工作流数据（可复用函数）
+const loadWorkflowData = async () => {
+  if (route.params.id === 'new') return // 新建工作流不需要加载
+
+  try {
+    const response = await getWorkflowDetail(route.params.id)
+
+    if (response) {
+      // 更新工作流基本信息
+      workflow.id = response.id
+      workflow.name = response.name
+      workflow.description = response.description || ''
+      workflow.published = response.published || false
+      workflow.hasRun = response.hasRun || false
+
+      // 映射后端返回的节点数据到前端格式
+      if (response.nodes && Array.isArray(response.nodes)) {
+        const nodeIdMap = {}
+
+        // 首先建立ID映射
+        response.nodes.forEach((node) => {
+          nodeIdMap[node.id] = node.nodeUuid
+        })
+
+        nodes.value = response.nodes.map((node) => {
+          const typeConfig = getNodeTypeConfig(node.type)
+          let nodeConfig = {}
+
+          // 解析配置
+          if (node.config) {
+            try {
+              nodeConfig = typeof node.config === 'string' ? JSON.parse(node.config) : node.config
+            } catch (e) {
+              nodeConfig = {}
+            }
+          }
+
+          const baseNode = {
+            id: node.nodeUuid,
+            type: node.type,
+            name: node.name,
+            x: node.positionX,
+            y: node.positionY,
+            inputs: parseJsonField(node.inputPorts, []),
+            outputs: parseJsonField(node.outputPorts, []),
+            inputParams: parseJsonField(node.inputParams, []),
+            outputParams: parseJsonField(node.outputParams, []),
+            config: nodeConfig,
+          }
+
+          // 如果是循环体节点，添加完整属性
+          if (node.type === 'loopBodyCanvas') {
+            baseNode.width = nodeConfig.width || 500
+            baseNode.height = nodeConfig.height || 400
+            baseNode.belongsTo = nodeConfig.belongsTo
+
+            // 添加循环体内部画布数据
+            if (nodeConfig.loopBody) {
+              baseNode.loopBody = nodeConfig.loopBody
+            } else {
+              baseNode.loopBody = {
+                canvas: { scale: 1, offsetX: 0, offsetY: 0 },
+                nodes: [],
+                connections: [],
+                leftPort: { id: 'port-left', name: '输入', type: 'input', y: 200, params: [] },
+                rightPort: { id: 'port-right', name: '输出', type: 'output', y: 200, params: [] },
+              }
+            }
+          }
+
+          // 如果是循环节点，添加默认的 outputParams
+          if (node.type === 'loop') {
+            if (baseNode.outputParams.length === 0) {
+              baseNode.outputParams = [
+                { name: 'current_item', type: 'Any' },
+                { name: 'current_index', type: 'Number' }
+              ]
+            }
+          }
+
+          return baseNode
+        })
+
+        // 映射后端返回的连接数据到前端格式
+        if (response.connections && Array.isArray(response.connections)) {
+          connections.value = response.connections.map((conn, index) => ({
+            id: conn.connectionUuid || `conn-${Date.now() + index}`,
+            sourceId: nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
+            sourcePort: conn.sourcePortId,
+            targetId: nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
+            targetPort: conn.targetPortId,
+            sourceParamIndex: conn.sourceParamIndex,
+            targetParamIndex: conn.targetParamIndex,
+            config: {}
+          }))
+        }
+
+        // 映射后端返回的关联数据到前端格式
+        if (response.associations && Array.isArray(response.associations)) {
+          associations.value = response.associations.map((assoc, index) => ({
+            id: `assoc-${index}`,
+            sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
+            targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+            associationType: assoc.associationType,
+            config: {}
+          }))
+        }
+      }
+    }
+
+    // 强制触发响应式更新
+    // 先清空再赋值，确保 Vue 检测到变化
+    const tempNodes = [...nodes.value]
+    nodes.value = []
+    await nextTick()
+    nodes.value = tempNodes
+
+    // 触发连线重新渲染
+    await nextTick()
+    if (connections.value.length > 0) {
+      const temp = [...connections.value]
+      connections.value = temp
+    }
+
+    console.log('工作流数据已刷新，节点数量:', nodes.value.length)
+  } catch (error) {
+    console.error('加载工作流失败:', error)
+    ElMessage.error('加载工作流失败')
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
 
@@ -4105,6 +4329,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('mousemove', onDragAiChat)
+  document.removeEventListener('mouseup', stopDragAiChat)
 })
 </script>
 
@@ -4663,7 +4889,21 @@ onUnmounted(() => {
         </div>
 
         <!-- AI助手面板 -->
-        <div class="ai-chat-panel" :class="{ expanded: aiChatExpanded }">
+        <div
+          class="ai-chat-panel"
+          :class="{ expanded: aiChatExpanded, dragging: isDraggingAiChat }"
+          :style="aiChatExpanded ? { height: aiChatHeight + 'px' } : {}"
+          @mousedown.stop
+        >
+          <!-- 拖拽调整手柄 -->
+          <div
+            v-if="aiChatExpanded"
+            class="ai-chat-resize-handle"
+            :class="{ active: isDraggingAiChat }"
+            @mousedown="startDragAiChat"
+          >
+            <div class="resize-indicator"></div>
+          </div>
           <div class="ai-chat-header" @click="toggleAiChat">
             <div class="ai-chat-title">
               <el-icon :size="16" color="#6366f1"><ChatDotRound /></el-icon>
@@ -7239,11 +7479,45 @@ onUnmounted(() => {
   z-index: 99;
   display: flex;
   flex-direction: column;
-  transition: all 0.3s ease;
+  transition: height 0.3s ease;
 }
 
-.ai-chat-panel.expanded {
-  height: 300px;
+.ai-chat-panel.dragging {
+  transition: none;
+}
+
+/* 拖拽调整手柄 */
+.ai-chat-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.ai-chat-resize-handle:hover .resize-indicator,
+.ai-chat-resize-handle.active .resize-indicator {
+  background: #6366f1;
+  width: 50px;
+}
+
+.resize-indicator {
+  width: 30px;
+  height: 3px;
+  background: #d1d5db;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.ai-chat-resize-handle.active .resize-indicator {
+  background: #6366f1;
 }
 
 .ai-chat-header {
