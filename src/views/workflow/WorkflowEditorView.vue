@@ -1243,10 +1243,10 @@ const aiChatIsTyping = ref(false)
 const aiChatMessagesRef = ref(null)
 const aiChatConversationId = ref(null)
 
-// AI聊天框拖拽调整高度
-const aiChatHeight = ref(300)
-const aiChatMinHeight = 150
-const aiChatMaxHeight = 600
+// AI聊天框拖拽调整宽度
+const aiChatWidth = ref(400)
+const aiChatMinWidth = 300
+const aiChatMaxWidth = 600
 const isDraggingAiChat = ref(false)
 
 // 开始拖拽AI聊天框
@@ -1257,7 +1257,7 @@ const startDragAiChat = (e) => {
   document.addEventListener('mousemove', onDragAiChat)
   document.addEventListener('mouseup', stopDragAiChat)
   document.body.style.userSelect = 'none'
-  document.body.style.cursor = 'ns-resize'
+  document.body.style.cursor = 'ew-resize'
 }
 
 // 拖拽中
@@ -1267,9 +1267,9 @@ const onDragAiChat = (e) => {
   const panel = document.querySelector('.ai-chat-panel')
   if (!panel) return
   const panelRect = panel.getBoundingClientRect()
-  const newHeight = panelRect.bottom - e.clientY
-  if (newHeight >= aiChatMinHeight && newHeight <= aiChatMaxHeight) {
-    aiChatHeight.value = newHeight
+  const newWidth = panelRect.right - e.clientX
+  if (newWidth >= aiChatMinWidth && newWidth <= aiChatMaxWidth) {
+    aiChatWidth.value = newWidth
   }
 }
 
@@ -4888,13 +4888,25 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- AI助手面板 -->
+        <!-- 右侧AI助手面板 -->
         <div
           class="ai-chat-panel"
           :class="{ expanded: aiChatExpanded, dragging: isDraggingAiChat }"
-          :style="aiChatExpanded ? { height: aiChatHeight + 'px' } : {}"
+          :style="aiChatExpanded ? { width: aiChatWidth + 'px' } : {}"
           @mousedown.stop
         >
+          <!-- 折叠状态下的折叠指示器 -->
+          <div
+            v-if="!aiChatExpanded"
+            class="ai-chat-collapse-indicator"
+            @click="toggleAiChat"
+          >
+            <el-icon class="collapse-icon" :size="24">
+              <ChatDotRound />
+            </el-icon>
+            <span class="collapse-text">AI 助手</span>
+          </div>
+
           <!-- 拖拽调整手柄 -->
           <div
             v-if="aiChatExpanded"
@@ -4904,15 +4916,29 @@ onUnmounted(() => {
           >
             <div class="resize-indicator"></div>
           </div>
-          <div class="ai-chat-header" @click="toggleAiChat">
+          <div v-if="aiChatExpanded" class="ai-chat-header" @click="toggleAiChat">
             <div class="ai-chat-title">
-              <el-icon :size="16" color="#6366f1"><ChatDotRound /></el-icon>
+              <div class="title-icon">
+                <el-icon :size="16" color="#6366f1"><ChatDotRound /></el-icon>
+              </div>
               <span>AI 智能助手</span>
+              <Transition name="fade">
+                <span v-if="aiChatIsTyping" class="processing-badge">
+                  <span class="badge-dot"></span>
+                  处理中
+                </span>
+              </Transition>
             </div>
-            <el-icon class="expand-icon" :class="{ expanded: aiChatExpanded }">
-              <ArrowUp v-if="aiChatExpanded" />
-              <ArrowDown v-else />
-            </el-icon>
+            <div class="ai-chat-header-right">
+              <Transition name="fade">
+                <span v-if="aiChatIsTyping" class="header-processing-indicator">
+                  <span class="spinner-mini"></span>
+                </span>
+              </Transition>
+              <el-icon class="expand-icon" :size="18" @click.stop="toggleAiChat">
+                <ArrowRight />
+              </el-icon>
+            </div>
           </div>
           <div v-show="aiChatExpanded" class="ai-chat-content">
             <div ref="aiChatMessagesRef" class="ai-chat-messages">
@@ -4959,24 +4985,22 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            <div class="ai-chat-input-area">
+            <div class="ai-chat-input-area" :class="{ 'is-disabled': aiChatIsTyping }">
               <el-input
                 v-model="aiChatInput"
-                placeholder="输入消息，按 Enter 发送..."
+                type="textarea"
+                :autosize="{ minRows: 1, maxRows: 4 }"
+                placeholder="输入消息，按 Enter 发送，Shift+Enter 换行..."
                 size="small"
-                @keydown.enter.prevent="sendAiMessage"
-              >
-                <template #suffix>
-                  <el-icon class="send-icon" @click="sendAiMessage"><Position /></el-icon>
-                </template>
-              </el-input>
-              <el-button text size="small" @click="clearAiChat">清空</el-button>
+                @keydown.enter.exact.prevent="sendAiMessage"
+              />
+              <el-button type="primary" size="small" :icon="Position" @click="sendAiMessage" :disabled="!aiChatInput.trim() || aiChatIsTyping">发送</el-button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 右侧配置面板 -->
+      <!-- 左侧配置面板 -->
       <div v-if="selectedNode" class="config-panel">
         <div class="panel-header">
           <div class="panel-title-area">
@@ -6142,6 +6166,7 @@ onUnmounted(() => {
 .editor-content {
   flex: 1;
   display: flex;
+  flex-direction: row;
   overflow: hidden;
 }
 
@@ -6652,15 +6677,16 @@ onUnmounted(() => {
 }
 
 .config-panel {
+  position: absolute;
+  left: 0;
+  top: 60px;
+  bottom: 0;
   width: 520px;
   background: #fff;
-  border-left: 1px solid #e5e7eb;
+  border-right: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  position: relative;
   z-index: 10;
-  margin-top: 60px;
 }
 
 .panel-header {
@@ -7468,49 +7494,157 @@ onUnmounted(() => {
   background: #585b70;
 }
 
-/* AI助手面板样式 */
+/* AI助手面板样式 - 右侧显示 */
 .ai-chat-panel {
   position: absolute;
+  top: 60px;
   bottom: 0;
-  left: 0;
   right: 0;
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
+  width: 52px;
+  background: transparent;
+  border-left: none;
   z-index: 99;
   display: flex;
   flex-direction: column;
-  transition: height 0.3s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: visible;
+}
+
+.ai-chat-panel.expanded {
+  width: 400px;
+  height: 70vh;
+  top: 50%;
+  transform: translateY(-50%);
+  max-height: none;
+  bottom: auto;
+  background: #fff;
+  border-left: 1px solid #e5e7eb;
+  border-radius: 12px 0 0 12px;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .ai-chat-panel.dragging {
   transition: none;
 }
 
-/* 拖拽调整手柄 */
+/* 折叠状态下的折叠指示器 */
+.ai-chat-collapse-indicator {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-radius: 12px 0 0 12px;
+  box-shadow: -4px 0 16px rgba(99, 102, 241, 0.3);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 5;
+}
+
+.ai-chat-collapse-indicator:hover {
+  width: 60px;
+  height: 130px;
+  box-shadow: -6px 0 24px rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+}
+
+.ai-chat-collapse-indicator:active {
+  transform: translateY(-50%) scale(0.98);
+}
+
+.ai-chat-collapse-indicator .collapse-icon {
+  color: #fff;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.ai-chat-collapse-indicator:hover .collapse-icon {
+  transform: scale(1.15) translateX(-2px);
+}
+
+.ai-chat-collapse-indicator .collapse-text {
+  writing-mode: vertical-rl;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 3px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* 折叠指示器的脉动动画 */
+.ai-chat-collapse-indicator::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
+  animation: collapse-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+}
+
+@keyframes collapse-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translateY(-50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.3);
+  }
+}
+
+/* 展开时隐藏折叠指示器 */
+.ai-chat-panel.expanded .ai-chat-collapse-indicator {
+  display: none;
+}
+
+/* 拖拽调整手柄 - 左侧边缘垂直拖拽 */
 .ai-chat-resize-handle {
   position: absolute;
+  left: 0;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  height: 6px;
-  cursor: ns-resize;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.ai-chat-panel.expanded .ai-chat-resize-handle {
+  opacity: 1;
+}
+
+.ai-chat-resize-handle:hover,
+.ai-chat-resize-handle.active {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.1) 0%, transparent 100%);
 }
 
 .ai-chat-resize-handle:hover .resize-indicator,
 .ai-chat-resize-handle.active .resize-indicator {
   background: #6366f1;
-  width: 50px;
+  height: 50px;
 }
 
 .resize-indicator {
-  width: 30px;
-  height: 3px;
+  width: 3px;
+  height: 30px;
   background: #d1d5db;
   border-radius: 2px;
   transition: all 0.2s ease;
@@ -7524,15 +7658,27 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
+  padding: 12px 16px;
   background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid #e5e7eb;
+  min-height: 48px;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
 }
 
 .ai-chat-header:hover {
   background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%);
+}
+
+.ai-chat-header:active {
+  background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+}
+
+/* 折叠状态下隐藏header */
+.ai-chat-panel:not(.expanded) .ai-chat-header {
+  display: none;
 }
 
 .ai-chat-title {
@@ -7540,8 +7686,116 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: #4f46e5;
+}
+
+.ai-chat-title .title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(99, 102, 241, 0.15);
+  border-radius: 8px;
+}
+
+.ai-chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 展开/折叠图标动画 */
+.ai-chat-header .expand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.ai-chat-header .expand-icon:hover {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-color: transparent;
+  color: #fff;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.ai-chat-header .expand-icon:active {
+  transform: scale(0.95);
+}
+
+/* 处理中状态徽章 */
+.processing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #92400e;
+  animation: badge-pulse 1.5s ease-in-out infinite;
+}
+
+/* 处理中状态徽章 */
+.processing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #92400e;
+  animation: badge-pulse 1.5s ease-in-out infinite;
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: dot-blink 0.8s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes dot-blink {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.5; }
+}
+
+/* 头部处理中指示器 */
+.header-processing-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.spinner-mini {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e0e7ff;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .ai-chat-header .expand-icon {
@@ -7549,8 +7803,14 @@ onUnmounted(() => {
   transition: transform 0.3s ease;
 }
 
-.ai-chat-header .expand-icon.expanded {
-  transform: rotate(180deg);
+/* 折叠状态下图标居中显示 */
+.ai-chat-panel:not(.expanded) .ai-chat-header {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.ai-chat-panel:not(.expanded) .ai-chat-header .expand-icon {
+  margin-top: 8px;
 }
 
 .ai-chat-content {
@@ -7568,6 +7828,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 12px;
   background: #f9fafb;
+  min-height: 80px;
 }
 
 .ai-message-item {
@@ -7733,27 +7994,98 @@ onUnmounted(() => {
   color: #6b7280;
 }
 
-.ai-chat-input-area {
+/* 处理中进度条 */
+.ai-chat-processing-bar {
+  position: relative;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-top: 1px solid #fcd34d;
+  overflow: hidden;
+}
+
+.processing-progress-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b);
+  background-size: 200% 100%;
+  animation: progress-flow 1.5s linear infinite;
+  width: 100%;
+}
+
+@keyframes progress-flow {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.processing-bar-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+}
+
+.mini-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fcd34d;
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.processing-bar-text {
+  font-size: 12px;
+  color: #92400e;
+  font-weight: 500;
+}
+
+/* 输入区域禁用状态 */
+.ai-chat-input-area.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.ai-chat-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 16px;
   background: #fff;
   border-top: 1px solid #e5e7eb;
+  transition: opacity 0.3s ease;
+  min-height: 70px;
 }
 
 .ai-chat-input-area .el-input {
   flex: 1;
 }
 
+.ai-chat-input-area .el-input :deep(.el-input__wrapper) {
+  padding: 8px 12px;
+  min-height: 40px;
+}
+
+.ai-chat-input-area .el-input :deep(.el-input__inner) {
+  line-height: 1.5;
+}
+
 .ai-chat-input-area .send-icon {
   cursor: pointer;
   color: #6366f1;
-  transition: color 0.2s;
+  transition: all 0.2s ease;
+  padding: 8px;
+  margin: -8px;
+  font-size: 18px;
 }
 
 .ai-chat-input-area .send-icon:hover {
   color: #4f46e5;
+  transform: scale(1.1);
+}
+
+.ai-chat-input-area .send-icon:active {
+  transform: scale(0.95);
 }
 
 .ai-chat-messages::-webkit-scrollbar {
@@ -7771,6 +8103,35 @@ onUnmounted(() => {
 
 .ai-chat-messages::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
+}
+
+/* Vue 过渡动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.2s ease-in;
+}
+
+.slide-fade-enter-from {
+  transform: translateY(-10px);
+  opacity: 0;
+}
+
+.slide-fade-leave-to {
+  transform: translateY(-10px);
+  opacity: 0;
 }
 
 /* 文本清洗节点配置样式 */

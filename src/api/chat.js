@@ -71,7 +71,14 @@ export async function sendMessageStream(params, { onStart, onChunk, onAction, on
                 // 兼容旧的 onChunk 方式
                 onChunk && onChunk({ type: 'start', conversationId: parsed.conversationId })
               } else if (parsed.type === 'chunk') {
-                onChunk && onChunk({ type: 'chunk', content: parsed.content })
+                // 传递完整的 chunk 信息，包括 contentType
+                onChunk && onChunk({
+                  type: 'chunk',
+                  content: parsed.content,
+                  contentType: parsed.contentType, // thinking, text, tool_use, result
+                  toolName: parsed.toolName,
+                  toolInput: parsed.toolInput
+                })
               } else if (parsed.type === 'workflow_update') {
                 // 处理工作流更新事件
                 onAction && onAction(parsed)
