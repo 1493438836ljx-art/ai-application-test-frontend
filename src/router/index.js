@@ -29,6 +29,18 @@ const router = createRouter({
       component: () => import('@/views/integration/CreateProjectView.vue'),
       meta: { title: '创建项目' },
     },
+    // 个人中心 - 独立页面
+    {
+      path: '/personal',
+      name: 'personal',
+      redirect: '/personal/training',
+    },
+    {
+      path: '/personal/:tab',
+      name: 'personal-center',
+      component: () => import('@/views/personal/PersonalCenterView.vue'),
+      meta: { title: '个人中心' },
+    },
     // 项目空间 - 独立页面
     {
       path: '/project-space',
