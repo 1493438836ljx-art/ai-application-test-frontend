@@ -48,6 +48,18 @@ const router = createRouter({
       component: () => import('@/views/project/ProjectSpaceView.vue'),
       meta: { title: '项目空间' },
     },
+    // 个人中心 - 独立页面
+    {
+      path: '/personal',
+      name: 'personal',
+      redirect: '/personal/training',
+    },
+    {
+      path: '/personal/:tab',
+      name: 'personal-center',
+      component: () => import('@/views/personal/PersonalCenterView.vue'),
+      meta: { title: '个人中心' },
+    },
     {
       path: '/app',
       component: MainLayout,

@@ -1,8 +1,28 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { UserFilled, Bell, ArrowDown } from '@element-plus/icons-vue'
+import {
+  UserFilled,
+  Bell,
+  ArrowDown,
+  School,
+  Folder,
+  Tickets,
+  Clock,
+  User,
+  Grid,
+} from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+
+// Icon component map for dynamic rendering
+const iconComponents = {
+  School,
+  Folder,
+  Tickets,
+  Clock,
+  User,
+  Grid,
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -15,14 +35,14 @@ const menuItems = [
   { label: '在线实训', path: '/training' },
 ]
 
-// Left sidebar menu items
+// Left sidebar menu items with icons
 const sidebarMenus = [
-  { key: 'training', label: '我的实训' },
-  { key: 'projects', label: '我的项目' },
-  { key: 'tickets', label: '我的工单' },
-  { key: 'todos', label: '我的代办' },
-  { key: 'account', label: '我的账号' },
-  { key: 'capabilities', label: '基础能力库' },
+  { key: 'training', label: '我的实训', icon: School },
+  { key: 'projects', label: '我的项目', icon: Folder },
+  { key: 'tickets', label: '我的工单', icon: Tickets },
+  { key: 'todos', label: '我的代办', icon: Clock },
+  { key: 'account', label: '我的账号', icon: User },
+  { key: 'capabilities', label: '基础能力库', icon: Grid },
 ]
 
 // Active menu from route params, default to 'training'
@@ -125,7 +145,8 @@ const handleUserCommand = (command) => {
             :class="{ active: activeMenu === item.key }"
             @click="handleSidebarMenuClick(item)"
           >
-            {{ item.label }}
+            <el-icon class="menu-icon"><component :is="item.icon" /></el-icon>
+            <span>{{ item.label }}</span>
           </div>
         </div>
       </aside>
@@ -283,6 +304,14 @@ const handleUserCommand = (command) => {
   position: relative;
   transition: all 0.3s ease;
   border-left: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-menu-item .menu-icon {
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 .sidebar-menu-item:hover {
