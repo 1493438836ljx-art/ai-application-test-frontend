@@ -14,6 +14,7 @@ import {
   ArrowDownBold,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import SkillLibraryView from '@/views/skill/SkillLibraryView.vue'
 
 // Icon component map for dynamic rendering
 const iconComponents = {
@@ -210,12 +211,17 @@ const handleUserCommand = (command) => {
 
       <!-- Right Content Area -->
       <main class="content-area">
-        <div class="content-wrapper">
-          <h2 class="content-title">{{ activeMenuLabel }}</h2>
-          <div class="content-placeholder">
-            <p>{{ activeMenuLabel }}内容区域</p>
-            <p class="placeholder-hint">此功能模块正在开发中...</p>
-          </div>
+        <div class="content-wrapper" :class="{ 'no-padding': activeMenu === 'skill-library' }">
+          <template v-if="activeMenu === 'skill-library'">
+            <SkillLibraryView />
+          </template>
+          <template v-else>
+            <h2 class="content-title">{{ activeMenuLabel }}</h2>
+            <div class="content-placeholder">
+              <p>{{ activeMenuLabel }}内容区域</p>
+              <p class="placeholder-hint">此功能模块正在开发中...</p>
+            </div>
+          </template>
         </div>
       </main>
     </div>
@@ -373,13 +379,13 @@ const handleUserCommand = (command) => {
 
 .sidebar-menu-item:hover {
   background: #f5f7fa;
-  color: #e63946;
+  color: #3b82f6;
 }
 
 .sidebar-menu-item.active {
-  color: #e63946;
-  background: #fff5f5;
-  border-left-color: #e63946;
+  color: #3b82f6;
+  background: #eff6ff;
+  border-left-color: #3b82f6;
   font-weight: 500;
 }
 
@@ -410,13 +416,13 @@ const handleUserCommand = (command) => {
 }
 
 .sub-menu-item:hover {
-  color: #e63946;
+  color: #3b82f6;
   background: #f5f5f5;
 }
 
 .sub-menu-item.active {
-  color: #e63946;
-  background: #fff5f5;
+  color: #3b82f6;
+  background: #eff6ff;
   font-weight: 500;
 }
 
@@ -427,7 +433,7 @@ const handleUserCommand = (command) => {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #e63946;
+  background: #3b82f6;
 }
 
 /* Right Content Area */
@@ -442,6 +448,11 @@ const handleUserCommand = (command) => {
   border-radius: 8px;
   padding: 24px;
   min-height: calc(100vh - 56px - 72px - 48px);
+}
+
+.content-wrapper.no-padding {
+  padding: 24px;
+  background: #f5f7fa;
 }
 
 .content-title {

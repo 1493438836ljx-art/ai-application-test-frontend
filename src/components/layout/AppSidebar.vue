@@ -332,8 +332,8 @@ const openChat = () => {
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
+  background: linear-gradient(135deg, #ebf5ff 0%, #dbeafe 100%);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
 }
 
 .nav-item.active .nav-indicator {
@@ -343,12 +343,12 @@ const openChat = () => {
   transform: translateY(-50%);
   width: 4px;
   height: 24px;
-  background: linear-gradient(180deg, #6366f1, #8b5cf6);
+  background: linear-gradient(180deg, #3b82f6, #60a5fa);
   border-radius: 0 4px 4px 0;
 }
 
 .nav-item.active .nav-icon-wrapper {
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
 }
 
 .nav-icon-wrapper {
@@ -373,7 +373,7 @@ const openChat = () => {
 }
 
 .nav-item.active .nav-title {
-  color: #4f46e5;
+  color: #2563eb;
   font-weight: 600;
 }
 
@@ -386,7 +386,7 @@ const openChat = () => {
 
 .expand-arrow.rotated {
   transform: rotate(90deg);
-  color: #6366f1;
+  color: #3b82f6;
 }
 
 /* 子菜单容器 */

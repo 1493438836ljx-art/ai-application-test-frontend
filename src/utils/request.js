@@ -111,4 +111,24 @@ export async function upload(url, formData, options = {}) {
   })
 }
 
+/**
+ * 上传文件（PUT方法）
+ * @param {string} url - 请求地址
+ * @param {FormData} formData - 表单数据
+ * @param {Object} options - 额外选项
+ * @returns {Promise<any>}
+ */
+export async function uploadPut(url, formData, options = {}) {
+  // 上传文件时不设置 Content-Type，让浏览器自动设置
+  const { headers, ...restOptions } = options
+  const { 'Content-Type': _, ...restHeaders } = headers || {}
+
+  return request(url, {
+    ...restOptions,
+    method: 'PUT',
+    headers: restHeaders,
+    body: formData,
+  })
+}
+
 export default request
