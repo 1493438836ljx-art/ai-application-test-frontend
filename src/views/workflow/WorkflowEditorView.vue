@@ -4895,16 +4895,36 @@ onUnmounted(() => {
           :style="aiChatExpanded ? { width: aiChatWidth + 'px' } : {}"
           @mousedown.stop
         >
-          <!-- 折叠状态下的折叠指示器 -->
+          <!-- 折叠状态下的折叠指示器 - AI助手风格设计 -->
           <div
             v-if="!aiChatExpanded"
             class="ai-chat-collapse-indicator"
             @click="toggleAiChat"
           >
-            <el-icon class="collapse-icon" :size="24">
-              <ChatDotRound />
-            </el-icon>
-            <span class="collapse-text">AI 助手</span>
+            <!-- AI火花装饰 -->
+            <div class="ai-sparkle ai-sparkle-1"></div>
+            <div class="ai-sparkle ai-sparkle-2"></div>
+            <div class="ai-sparkle ai-sparkle-3"></div>
+
+            <!-- AI图标区域 -->
+            <div class="ai-icon-container">
+              <div class="ai-icon-glow"></div>
+              <el-icon class="ai-icon" :size="22">
+                <ChatDotRound />
+              </el-icon>
+            </div>
+
+            <!-- 文字区域 -->
+            <div class="ai-text-container">
+              <span class="ai-label">AI</span>
+              <span class="ai-title">智能助手</span>
+            </div>
+
+            <!-- 展开提示 -->
+            <div class="ai-expand-hint">
+              <span class="hint-dot"></span>
+              <span class="hint-text">点击展开</span>
+            </div>
           </div>
 
           <!-- 拖拽调整手柄 -->
@@ -4919,13 +4939,17 @@ onUnmounted(() => {
           <div v-if="aiChatExpanded" class="ai-chat-header" @click="toggleAiChat">
             <div class="ai-chat-title">
               <div class="title-icon">
-                <el-icon :size="16" color="#6366f1"><ChatDotRound /></el-icon>
+                <div class="icon-glow"></div>
+                <el-icon :size="18"><ChatDotRound /></el-icon>
               </div>
-              <span>AI 智能助手</span>
+              <div class="title-content">
+                <span class="title-label">AI</span>
+                <span class="title-text">智能助手</span>
+              </div>
               <Transition name="fade">
                 <span v-if="aiChatIsTyping" class="processing-badge">
                   <span class="badge-dot"></span>
-                  处理中
+                  <span class="badge-text">思考中</span>
                 </span>
               </Transition>
             </div>
@@ -4935,9 +4959,11 @@ onUnmounted(() => {
                   <span class="spinner-mini"></span>
                 </span>
               </Transition>
-              <el-icon class="expand-icon" :size="18" @click.stop="toggleAiChat">
-                <ArrowRight />
-              </el-icon>
+              <div class="collapse-btn" @click.stop="toggleAiChat" title="收起面板">
+                <el-icon :size="16">
+                  <ArrowRight />
+                </el-icon>
+              </div>
             </div>
           </div>
           <div v-show="aiChatExpanded" class="ai-chat-content">
@@ -7528,81 +7554,231 @@ onUnmounted(() => {
   transition: none;
 }
 
-/* 折叠状态下的折叠指示器 */
+/* 折叠状态下的折叠指示器 - AI助手风格设计 */
 .ai-chat-collapse-indicator {
   position: absolute;
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 52px;
-  height: 120px;
+  width: 56px;
+  min-height: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  padding: 16px 8px;
+  gap: 8px;
   cursor: pointer;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  border-radius: 12px 0 0 12px;
-  box-shadow: -4px 0 16px rgba(99, 102, 241, 0.3);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+  border-radius: 16px 0 0 16px;
+  box-shadow:
+    -4px 0 24px rgba(99, 102, 241, 0.4),
+    0 0 32px rgba(139, 92, 246, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 5;
+  overflow: visible;
 }
 
-.ai-chat-collapse-indicator:hover {
-  width: 60px;
-  height: 130px;
-  box-shadow: -6px 0 24px rgba(99, 102, 241, 0.4);
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-}
-
-.ai-chat-collapse-indicator:active {
-  transform: translateY(-50%) scale(0.98);
-}
-
-.ai-chat-collapse-indicator .collapse-icon {
-  color: #fff;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-}
-
-.ai-chat-collapse-indicator:hover .collapse-icon {
-  transform: scale(1.15) translateX(-2px);
-}
-
-.ai-chat-collapse-indicator .collapse-text {
-  writing-mode: vertical-rl;
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-  letter-spacing: 3px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-/* 折叠指示器的脉动动画 */
+/* AI发光背景 */
 .ai-chat-collapse-indicator::before {
   content: '';
   position: absolute;
-  left: -4px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 8px;
-  height: 8px;
-  background: #fff;
-  border-radius: 50%;
-  animation: collapse-pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+  inset: -3px;
+  border-radius: 19px 0 0 19px;
+  background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+  filter: blur(16px);
+  opacity: 0.5;
+  z-index: -1;
+  animation: ai-glow-pulse 2.5s ease-in-out infinite;
 }
 
-@keyframes collapse-pulse {
+@keyframes ai-glow-pulse {
   0%, 100% {
-    opacity: 0.6;
-    transform: translateY(-50%) scale(1);
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.08);
+  }
+}
+
+/* AI火花装饰 */
+.ai-sparkle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #fff;
+  border-radius: 50%;
+  animation: sparkle-twinkle 1.5s ease-in-out infinite;
+  box-shadow: 0 0 8px #fff, 0 0 16px rgba(255, 255, 255, 0.5);
+}
+
+.ai-sparkle-1 {
+  top: 12px;
+  right: 8px;
+  animation-delay: 0s;
+}
+
+.ai-sparkle-2 {
+  top: 45%;
+  right: 4px;
+  animation-delay: 0.5s;
+}
+
+.ai-sparkle-3 {
+  bottom: 20px;
+  right: 10px;
+  animation-delay: 1s;
+}
+
+@keyframes sparkle-twinkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.6);
   }
   50% {
     opacity: 1;
-    transform: translateY(-50%) scale(1.3);
+    transform: scale(1.2);
   }
+}
+
+.ai-chat-collapse-indicator:hover {
+  width: 64px;
+  left: -4px;
+  box-shadow:
+    -6px 0 32px rgba(99, 102, 241, 0.5),
+    0 0 48px rgba(139, 92, 246, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  background: linear-gradient(180deg, #4f46e5 0%, #7c3aed 50%, #9333ea 100%);
+}
+
+.ai-chat-collapse-indicator:hover::before {
+  opacity: 0.7;
+}
+
+.ai-chat-collapse-indicator:active {
+  transform: translateY(-50%) scale(0.97);
+}
+
+/* AI图标容器 */
+.ai-icon-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(4px);
+}
+
+.ai-icon-glow {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+  animation: icon-glow 2s ease-in-out infinite;
+}
+
+@keyframes icon-glow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.15);
+  }
+}
+
+.ai-chat-collapse-indicator:hover .ai-icon-container {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.1);
+}
+
+.ai-chat-collapse-indicator .ai-icon {
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: transform 0.3s ease;
+}
+
+.ai-chat-collapse-indicator:hover .ai-icon {
+  transform: rotate(-10deg) scale(1.1);
+}
+
+/* AI文字区域 */
+.ai-text-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ai-label {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+}
+
+.ai-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.ai-chat-collapse-indicator:hover .ai-label {
+  letter-spacing: 3px;
+}
+
+/* 展开提示 */
+.ai-expand-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  opacity: 0.8;
+  transition: all 0.3s ease;
+}
+
+.hint-dot {
+  width: 4px;
+  height: 4px;
+  background: #fff;
+  border-radius: 50%;
+  animation: hint-pulse 1s ease-in-out infinite;
+}
+
+@keyframes hint-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.hint-text {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+.ai-chat-collapse-indicator:hover .ai-expand-hint {
+  background: rgba(255, 255, 255, 0.25);
+  opacity: 1;
 }
 
 /* 展开时隐藏折叠指示器 */
@@ -7658,22 +7834,50 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   cursor: pointer;
   user-select: none;
-  border-bottom: 1px solid #e5e7eb;
-  min-height: 48px;
+  border-bottom: none;
+  min-height: 56px;
   flex-shrink: 0;
-  transition: background 0.2s ease;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 背景装饰 */
+.ai-chat-header::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ai-chat-header::after {
+  content: '';
+  position: absolute;
+  bottom: -30%;
+  left: 10%;
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 .ai-chat-header:hover {
-  background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%);
+  background: linear-gradient(135deg, #5558e3 0%, #7c3aed 100%);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
 }
 
 .ai-chat-header:active {
-  background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
 }
 
 /* 折叠状态下隐藏header */
@@ -7684,89 +7888,127 @@ onUnmounted(() => {
 .ai-chat-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #4f46e5;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
 }
 
 .ai-chat-title .title-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: rgba(99, 102, 241, 0.15);
-  border-radius: 8px;
-}
-
-.ai-chat-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 展开/折叠图标动画 */
-.ai-chat-header .expand-icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  color: #6366f1;
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #fff;
+  backdrop-filter: blur(4px);
+  transition: all 0.25s ease;
+}
+
+.ai-chat-title .title-icon .icon-glow {
+  position: absolute;
+  inset: -3px;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+  border-radius: 12px;
+  animation: icon-glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes icon-glow-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.ai-chat-header:hover .title-icon {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
+}
+
+.ai-chat-title .title-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ai-chat-title .title-label {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 2px;
+  line-height: 1.1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.ai-chat-title .title-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.5px;
+}
+
+.ai-chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 收起按钮 */
+.ai-chat-header .collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
+  backdrop-filter: blur(4px);
 }
 
-.ai-chat-header .expand-icon:hover {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  border-color: transparent;
+.ai-chat-header .collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
   color: #fff;
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  transform: scale(1.08) translateX(2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.ai-chat-header .expand-icon:active {
-  transform: scale(0.95);
+.ai-chat-header .collapse-btn:active {
+  transform: scale(0.95) translateX(2px);
 }
 
-/* 处理中状态徽章 */
+/* 处理中状态徽章 - 新设计 */
 .processing-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #92400e;
-  animation: badge-pulse 1.5s ease-in-out infinite;
-}
-
-/* 处理中状态徽章 */
-.processing-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #92400e;
-  animation: badge-pulse 1.5s ease-in-out infinite;
+  gap: 5px;
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+  margin-left: 8px;
 }
 
 .badge-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f59e0b;
-  animation: dot-blink 0.8s ease-in-out infinite;
+  background: #fef08a;
+  box-shadow: 0 0 6px #fef08a;
+  animation: dot-blink 1s ease-in-out infinite;
+}
+
+.badge-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 @keyframes badge-pulse {
@@ -7786,10 +8028,10 @@ onUnmounted(() => {
 }
 
 .spinner-mini {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #e0e7ff;
-  border-top-color: #6366f1;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

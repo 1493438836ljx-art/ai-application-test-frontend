@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   UserFilled,
@@ -11,6 +11,7 @@ import {
   Clock,
   User,
   Grid,
+  ArrowDownBold,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -35,25 +36,61 @@ const menuItems = [
   { label: '在线实训', path: '/training' },
 ]
 
-// Left sidebar menu items with icons
+// Left sidebar menu items with icons and children
 const sidebarMenus = [
   { key: 'training', label: '我的实训', icon: School },
   { key: 'projects', label: '我的项目', icon: Folder },
   { key: 'tickets', label: '我的工单', icon: Tickets },
   { key: 'todos', label: '我的代办', icon: Clock },
   { key: 'account', label: '我的账号', icon: User },
-  { key: 'capabilities', label: '基础能力库', icon: Grid },
+  {
+    key: 'capabilities',
+    label: '基础能力库',
+    icon: Grid,
+    children: [
+      { key: 'feature-library', label: '特性库' },
+      { key: 'skill-library', label: 'Skill库' },
+    ],
+  },
 ]
+
+// Expanded menu keys (for sub-menu toggle)
+const expandedMenus = ref(['capabilities'])
+
+// Toggle sub-menu expansion
+const toggleSubMenu = (key) => {
+  const index = expandedMenus.value.indexOf(key)
+  if (index > -1) {
+    expandedMenus.value.splice(index, 1)
+  } else {
+    expandedMenus.value.push(key)
+  }
+}
+
+// Check if menu is expanded
+const isMenuExpanded = (key) => {
+  return expandedMenus.value.includes(key)
+}
 
 // Active menu from route params, default to 'training'
 const activeMenu = computed(() => {
   return route.params.tab || 'training'
 })
 
-// Active menu label
+// Active menu label - also check sub-menus
 const activeMenuLabel = computed(() => {
+  // First check top-level menus
   const menu = sidebarMenus.find((m) => m.key === activeMenu.value)
-  return menu ? menu.label : '我的实训'
+  if (menu) return menu.label
+
+  // Then check sub-menus
+  for (const parent of sidebarMenus) {
+    if (parent.children) {
+      const child = parent.children.find((c) => c.key === activeMenu.value)
+      if (child) return child.label
+    }
+  }
+  return '我的实训'
 })
 
 // Top menu click handler
@@ -66,6 +103,11 @@ const handleMenuClick = (item) => {
 // Sidebar menu click handler
 const handleSidebarMenuClick = (item) => {
   router.push(`/personal/${item.key}`)
+}
+
+// Sub-menu click handler
+const handleSubMenuClick = (child) => {
+  router.push(`/personal/${child.key}`)
 }
 
 // User dropdown command handler
@@ -138,16 +180,31 @@ const handleUserCommand = (command) => {
       <!-- Left Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-menu">
-          <div
-            v-for="item in sidebarMenus"
-            :key="item.key"
-            class="sidebar-menu-item"
-            :class="{ active: activeMenu === item.key }"
-            @click="handleSidebarMenuClick(item)"
-          >
-            <el-icon class="menu-icon"><component :is="item.icon" /></el-icon>
-            <span>{{ item.label }}</span>
-          </div>
+          <template v-for="item in sidebarMenus" :key="item.key">
+            <div
+              class="sidebar-menu-item"
+              :class="{ active: activeMenu === item.key && !item.children }"
+              @click="item.children ? toggleSubMenu(item.key) : handleSidebarMenuClick(item)"
+            >
+              <el-icon v-if="item.icon" class="menu-icon"><component :is="item.icon" /></el-icon>
+              <span>{{ item.label }}</span>
+              <el-icon v-if="item.children" class="arrow-icon" :class="{ expanded: isMenuExpanded(item.key) }">
+                <ArrowDown />
+              </el-icon>
+            </div>
+            <!-- Sub-menu items -->
+            <div v-if="item.children && isMenuExpanded(item.key)" class="sub-menu">
+              <div
+                v-for="child in item.children"
+                :key="child.key"
+                class="sub-menu-item"
+                :class="{ active: activeMenu === child.key }"
+                @click="handleSubMenuClick(child)"
+              >
+                <span>{{ child.label }}</span>
+              </div>
+            </div>
+          </template>
         </div>
       </aside>
 
@@ -324,6 +381,53 @@ const handleUserCommand = (command) => {
   background: #fff5f5;
   border-left-color: #e63946;
   font-weight: 500;
+}
+
+/* Arrow icon for expandable menu */
+.sidebar-menu-item .arrow-icon {
+  margin-left: auto;
+  font-size: 12px;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-menu-item .arrow-icon.expanded {
+  transform: rotate(180deg);
+}
+
+/* Sub-menu styles */
+.sub-menu {
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.sub-menu-item {
+  padding: 12px 24px 12px 56px;
+  font-size: 14px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.sub-menu-item:hover {
+  color: #e63946;
+  background: #f5f5f5;
+}
+
+.sub-menu-item.active {
+  color: #e63946;
+  background: #fff5f5;
+  font-weight: 500;
+}
+
+.sub-menu-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #e63946;
 }
 
 /* Right Content Area */
