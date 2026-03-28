@@ -109,10 +109,18 @@ const handleDropdownCommand = (command) => {
 
 // 用户下拉菜单命令
 const handleUserCommand = (command) => {
+  const routeMap = {
+    training: '/personal/training',
+    projects: '/personal/projects',
+    tickets: '/personal/tickets',
+    todos: '/personal/todos',
+    account: '/personal/account',
+  }
+
   if (command === 'logout') {
     ElMessage.info('退出登录')
-  } else {
-    ElMessage.info(`跳转到${command}`)
+  } else if (routeMap[command]) {
+    router.push(routeMap[command])
   }
 }
 

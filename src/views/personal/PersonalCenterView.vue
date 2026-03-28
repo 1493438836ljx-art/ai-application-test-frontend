@@ -1,0 +1,381 @@
+<script setup>
+import { computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { UserFilled, Bell, ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+
+const router = useRouter()
+const route = useRoute()
+
+// Top menu items
+const menuItems = [
+  { label: '首页', path: '/' },
+  { label: '集成验证', path: '/integration' },
+  { label: '方案体验', path: '/experience' },
+  { label: '在线实训', path: '/training' },
+]
+
+// Left sidebar menu items
+const sidebarMenus = [
+  { key: 'training', label: '我的实训' },
+  { key: 'projects', label: '我的项目' },
+  { key: 'tickets', label: '我的工单' },
+  { key: 'todos', label: '我的代办' },
+  { key: 'account', label: '我的账号' },
+  { key: 'capabilities', label: '基础能力库' },
+]
+
+// Active menu from route params, default to 'training'
+const activeMenu = computed(() => {
+  return route.params.tab || 'training'
+})
+
+// Active menu label
+const activeMenuLabel = computed(() => {
+  const menu = sidebarMenus.find((m) => m.key === activeMenu.value)
+  return menu ? menu.label : '我的实训'
+})
+
+// Top menu click handler
+const handleMenuClick = (item) => {
+  if (item.path) {
+    router.push(item.path)
+  }
+}
+
+// Sidebar menu click handler
+const handleSidebarMenuClick = (item) => {
+  router.push(`/personal/${item.key}`)
+}
+
+// User dropdown command handler
+const handleUserCommand = (command) => {
+  if (command === 'logout') {
+    ElMessage.info('退出登录')
+  } else {
+    router.push(`/personal/${command}`)
+  }
+}
+</script>
+
+<template>
+  <div class="personal-center-page">
+    <!-- Top Navigation Bar -->
+    <header class="top-header">
+      <div class="header-content">
+        <!-- Left: Logo and Menu -->
+        <div class="header-left">
+          <div class="logo-section">
+            <img src="@/assets/logo.png" alt="Logo" class="logo-image" />
+          </div>
+          <nav class="header-menu">
+            <div
+              v-for="item in menuItems"
+              :key="item.label"
+              class="menu-item"
+              :class="{ active: item.label === '首页' }"
+              @click="handleMenuClick(item)"
+            >
+              {{ item.label }}
+            </div>
+          </nav>
+        </div>
+
+        <!-- Right: Action Buttons -->
+        <div class="header-right">
+          <div class="header-action">
+            <span class="lang-switch">EN</span>
+          </div>
+          <div class="header-action">
+            <el-icon :size="18"><Bell /></el-icon>
+          </div>
+          <div class="header-action">
+            <span>帮助</span>
+          </div>
+          <el-dropdown trigger="hover" @command="handleUserCommand">
+            <div class="header-action user-dropdown">
+              <el-icon :size="18"><UserFilled /></el-icon>
+              <span>17721884685</span>
+              <el-icon :size="12"><ArrowDown /></el-icon>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="training">我的实训</el-dropdown-item>
+                <el-dropdown-item command="projects">我的项目</el-dropdown-item>
+                <el-dropdown-item command="tickets">我的工单</el-dropdown-item>
+                <el-dropdown-item command="todos">我的代办</el-dropdown-item>
+                <el-dropdown-item command="account">我的账号</el-dropdown-item>
+                <el-dropdown-item divided command="logout">退出</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="main-container">
+      <!-- Left Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-menu">
+          <div
+            v-for="item in sidebarMenus"
+            :key="item.key"
+            class="sidebar-menu-item"
+            :class="{ active: activeMenu === item.key }"
+            @click="handleSidebarMenuClick(item)"
+          >
+            {{ item.label }}
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Content Area -->
+      <main class="content-area">
+        <div class="content-wrapper">
+          <h2 class="content-title">{{ activeMenuLabel }}</h2>
+          <div class="content-placeholder">
+            <p>{{ activeMenuLabel }}内容区域</p>
+            <p class="placeholder-hint">此功能模块正在开发中...</p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Footer -->
+    <footer class="page-footer">
+      <div class="footer-content">
+        <p>Copyright © Huawei Technologies Co., Ltd. 2011-2026 Support.</p>
+      </div>
+    </footer>
+  </div>
+</template>
+
+<style scoped>
+/* Page Layout */
+.personal-center-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+/* Top Navigation Bar */
+.top-header {
+  background: #fff;
+  height: 56px;
+  border-bottom: 1px solid #e8e8e8;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+}
+
+.logo-image {
+  height: 32px;
+  object-fit: contain;
+}
+
+/* Menu Styles */
+.header-menu {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.menu-item {
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  padding: 8px 0;
+  position: relative;
+  transition: color 0.3s ease;
+}
+
+.menu-item:hover {
+  color: #e63946;
+}
+
+.menu-item.active {
+  color: #e63946;
+  font-weight: 500;
+}
+
+.menu-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #e63946;
+}
+
+/* Right Header Actions */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.header-action {
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.3s ease;
+}
+
+.header-action:hover {
+  color: #e63946;
+}
+
+.user-dropdown {
+  gap: 4px;
+}
+
+/* Main Container */
+.main-container {
+  flex: 1;
+  display: flex;
+  background: #f5f7fa;
+}
+
+/* Left Sidebar */
+.sidebar {
+  width: 220px;
+  background: #fff;
+  border-right: 1px solid #e8e8e8;
+  flex-shrink: 0;
+}
+
+.sidebar-menu {
+  padding: 16px 0;
+}
+
+.sidebar-menu-item {
+  padding: 14px 24px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+  border-left: 3px solid transparent;
+}
+
+.sidebar-menu-item:hover {
+  background: #f5f7fa;
+  color: #e63946;
+}
+
+.sidebar-menu-item.active {
+  color: #e63946;
+  background: #fff5f5;
+  border-left-color: #e63946;
+  font-weight: 500;
+}
+
+/* Right Content Area */
+.content-area {
+  flex: 1;
+  padding: 24px;
+  overflow: auto;
+}
+
+.content-wrapper {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  min-height: calc(100vh - 56px - 72px - 48px);
+}
+
+.content-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 24px 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.content-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  color: #999;
+}
+
+.content-placeholder p {
+  margin: 0;
+  font-size: 16px;
+}
+
+.placeholder-hint {
+  margin-top: 12px !important;
+  font-size: 14px !important;
+  color: #bbb;
+}
+
+/* Footer */
+.page-footer {
+  background: #f8f9fa;
+  padding: 24px;
+  flex-shrink: 0;
+  border-top: 1px solid #e8e8e8;
+}
+
+.footer-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.footer-content p {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header-menu {
+    display: none;
+  }
+
+  .header-right {
+    gap: 16px;
+  }
+
+  .sidebar {
+    width: 180px;
+  }
+
+  .sidebar-menu-item {
+    padding: 12px 16px;
+  }
+}
+</style>
