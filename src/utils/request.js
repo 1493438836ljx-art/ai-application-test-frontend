@@ -84,11 +84,21 @@ export async function put(url, data = {}, options = {}) {
 /**
  * DELETE 请求
  * @param {string} url - 请求地址
- * @param {Object} options - 额外选项
+ * @param {Object|Array} [data] - 请求体数据（可选，支持对象或数组）
+ * @param {Object} [options] - 额外选项
  * @returns {Promise<any>}
  */
-export async function del(url, options = {}) {
-  return request(url, { ...options, method: 'DELETE' })
+export async function del(url, data, options = {}) {
+  const requestOptions = { ...options, method: 'DELETE' }
+  // 如果有数据，添加请求体（支持对象和数组）
+  if (data !== undefined && data !== null) {
+    if (Array.isArray(data) && data.length > 0) {
+      requestOptions.body = JSON.stringify(data)
+    } else if (typeof data === 'object' && Object.keys(data).length > 0) {
+      requestOptions.body = JSON.stringify(data)
+    }
+  }
+  return request(url, requestOptions)
 }
 
 /**

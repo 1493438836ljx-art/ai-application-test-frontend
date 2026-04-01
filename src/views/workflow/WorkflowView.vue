@@ -12,6 +12,8 @@ import {
   CopyDocument,
   VideoPlay,
   Setting,
+  CircleCheck,
+  CircleClose,
 } from '@element-plus/icons-vue'
 import {
   getWorkflowList,
@@ -19,9 +21,10 @@ import {
   deleteWorkflow as deleteWorkflowApi,
   copyWorkflow as copyWorkflowApi,
   publishWorkflow,
+  unpublishWorkflow,
   getDefaultWorkflow,
-  getWorkflowDetail,
-} from '@/api/workflow'
+} from '@/api/workflow.js'
+import { createAssociationData, AssociationType } from '@/api/workflowAssociation.js'
 
 const router = useRouter()
 
@@ -41,8 +44,15 @@ const total = ref(0)
 // 搜索关键词
 const searchKeyword = ref('')
 
-// 状态筛选
+// 状态筛选（使用后端定义的状态）
 const statusFilter = ref('')
+
+// 后端定义的工作流状态
+const WorkflowStatus = {
+  DRAFT: 'DRAFT',
+  PUBLISHED: 'PUBLISHED',
+  ARCHIVED: 'ARCHIVED',
+}
 
 // 获取工作流列表
 const fetchWorkflowList = async () => {
@@ -88,11 +98,11 @@ const handlePageChange = (val) => {
   fetchWorkflowList()
 }
 
-// 状态标签配置
+// 状态标签配置（与后端 WorkflowStatus 枚举对齐）
 const statusConfig = {
-  active: { label: '已发布', type: 'success' },
-  draft: { label: '草稿', type: 'warning' },
-  inactive: { label: '已停用', type: 'info' },
+  [WorkflowStatus.PUBLISHED]: { label: '已发布', type: 'success' },
+  [WorkflowStatus.DRAFT]: { label: '草稿', type: 'warning' },
+  [WorkflowStatus.ARCHIVED]: { label: '已归档', type: 'info' },
 }
 
 // 获取状态配置
@@ -114,14 +124,14 @@ const handleCreateWorkflow = async () => {
     let defaultData = {
       nodes: [],
       connections: [],
-      associations: []
+      associations: [],
     }
 
     try {
       const defaultWorkflow = await getDefaultWorkflow()
       if (defaultWorkflow) {
         // 映射默认工作流的节点数据
-        defaultData.nodes = (defaultWorkflow.nodes || []).map(node => ({
+        defaultData.nodes = (defaultWorkflow.nodes || []).map((node) => ({
           nodeUuid: node.nodeUuid,
           type: node.type,
           name: node.name,
@@ -131,24 +141,24 @@ const handleCreateWorkflow = async () => {
           outputPorts: node.outputPorts,
           inputParams: node.inputParams,
           outputParams: node.outputParams,
-          config: node.config
+          config: node.config,
         }))
 
         // 映射连接数据 - 使用后端期望的字段名
-        defaultData.connections = (defaultWorkflow.connections || []).map(conn => ({
+        defaultData.connections = (defaultWorkflow.connections || []).map((conn) => ({
           sourceNodeUuid: conn.sourceNodeUuid || conn.sourceNodeId,
-          sourcePortId: conn.sourcePortId,
+          sourcePortId: conn.sourcePortId || conn.sourcePort,
           targetNodeUuid: conn.targetNodeUuid || conn.targetNodeId,
-          targetPortId: conn.targetPortId,
+          targetPortId: conn.targetPortId || conn.targetPort,
           sourceParamIndex: conn.sourceParamIndex,
-          targetParamIndex: conn.targetParamIndex
+          targetParamIndex: conn.targetParamIndex,
         }))
 
-        // 映射关联数据 - 使用后端期望的字段名
-        defaultData.associations = (defaultWorkflow.associations || []).map(assoc => ({
-          loopNodeUuid: assoc.loopNodeUuid || assoc.loopNodeId,
+        // 映射关联数据 - 使用后端期望的字段名（containerNodeUuid 替代 loopNodeUuid）
+        defaultData.associations = (defaultWorkflow.associations || []).map((assoc) => ({
+          containerNodeUuid: assoc.containerNodeUuid || assoc.loopNodeUuid || assoc.loopNodeId,
           bodyNodeUuid: assoc.bodyNodeUuid || assoc.bodyNodeId,
-          associationType: assoc.associationType
+          associationType: assoc.associationType || AssociationType.LOOP_BODY,
         }))
       }
     } catch (error) {
@@ -161,13 +171,13 @@ const handleCreateWorkflow = async () => {
       description: '',
       nodes: defaultData.nodes,
       connections: defaultData.connections,
-      associations: defaultData.associations
+      associations: defaultData.associations,
     })
 
-    if (response && response.data) {
+    if (response && response.id) {
       ElMessage.success('创建成功')
       // 跳转到编辑页面
-      router.push(`/workflow/${response.data.id}`)
+      router.push(`/workflow/${response.id}`)
     }
   } catch (error) {
     // 用户取消或请求失败
@@ -197,37 +207,9 @@ const copyWorkflow = async (item) => {
     const response = await copyWorkflowApi(item.id)
     if (response) {
       ElMessage.success('复制成功')
-      // 重新获取列表
       fetchWorkflowList()
     }
   } catch (error) {
-    // 用户取消或请求失败
-    if (error !== 'cancel') {
-      // 请求失败已在 request.js 中统一处理
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-// 删除工作流
-const deleteWorkflow = async (item) => {
-  try {
-    await ElMessageBox.confirm(`确定要删除工作流"${item.name}"吗？此操作不可恢复。`, '确认删除', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-
-    loading.value = true
-    const response = await deleteWorkflowApi(item.id)
-    if (response) {
-      ElMessage.success('删除成功')
-      // 重新获取列表
-      fetchWorkflowList()
-    }
-  } catch (error) {
-    // 用户取消或请求失败
     if (error !== 'cancel') {
       // 请求失败已在 request.js 中统一处理
     }
@@ -249,11 +231,9 @@ const handlePublishWorkflow = async (item) => {
     const response = await publishWorkflow(item.id)
     if (response) {
       ElMessage.success('发布成功')
-      // 重新获取列表
       fetchWorkflowList()
     }
   } catch (error) {
-    // 用户取消或请求失败
     if (error !== 'cancel') {
       // 请求失败已在 request.js 中统一处理
     }
@@ -262,141 +242,183 @@ const handlePublishWorkflow = async (item) => {
   }
 }
 
-// 运行工作流
-const runWorkflow = (item) => {
-  ElMessage.info(`正在运行工作流: ${item.name}`)
-  // TODO: 跳转到运行页面或打开运行对话框
+// 取消发布工作流
+const handleUnpublishWorkflow = async (item) => {
+  try {
+    await ElMessageBox.confirm(`确定要取消发布工作流"${item.name}"吗？`, '确认取消发布', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+
+    loading.value = true
+    const response = await unpublishWorkflow(item.id)
+    if (response) {
+      ElMessage.success('取消发布成功')
+      fetchWorkflowList()
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      // 请求失败已在 request.js 中统一处理
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+// 删除工作流
+const deleteWorkflow = async (item) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除工作流"${item.name}"吗？`, '确认删除', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'error',
+    })
+
+    loading.value = true
+    await deleteWorkflowApi(item.id)
+    ElMessage.success('删除成功')
+    fetchWorkflowList()
+  } catch (error) {
+    if (error !== 'cancel') {
+      // 请求失败已在 request.js 中统一处理
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
 // 格式化时间
 const formatTime = (time) => {
   if (!time) return '-'
-  return time
+  const date = new Date(time)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-// 下拉菜单命令
-const handleCommand = (command, item) => {
-  switch (command) {
-    case 'edit':
-      editWorkflow(item.id)
-      break
-    case 'copy':
-      copyWorkflow(item)
-      break
-    case 'delete':
-      deleteWorkflow(item)
-      break
-    case 'run':
-      runWorkflow(item)
-      break
-    case 'publish':
-      handlePublishWorkflow(item)
-      break
-  }
+// 格式化人员信息（姓名拼音 工号）
+const formatPerson = (name, id) => {
+  if (!name) return '-'
+  return id ? `${name} ${id}` : name
 }
 
+// 初始化
 onMounted(() => {
-  // 加载工作流列表数据
   fetchWorkflowList()
 })
 </script>
 
 <template>
   <div class="workflow-view" v-loading="loading">
-    <!-- 页面头部 -->
+    <!-- 页面标题 -->
     <div class="page-header">
-      <div class="header-left">
-        <h1 class="page-title">工作流管理</h1>
-        <p class="page-desc">可视化编排 AI 工作流程，实现复杂业务逻辑</p>
-      </div>
-      <div class="header-right">
-        <el-button type="primary" :icon="Plus" @click="handleCreateWorkflow">
-          新建工作流
-        </el-button>
-      </div>
+      <h2>工作流管理</h2>
+      <p class="subtitle">管理和配置测试工作流</p>
     </div>
 
-    <!-- 搜索和筛选 -->
-    <div class="filter-bar">
-      <div class="search-box">
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="left">
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索工作流名称或描述"
+          placeholder="搜索工作流名称..."
           :prefix-icon="Search"
           clearable
-          style="width: 320px"
+          style="width: 240px"
         />
-      </div>
-      <div class="filter-options">
         <el-select v-model="statusFilter" placeholder="状态筛选" clearable style="width: 140px">
-          <el-option label="已发布" value="active" />
-          <el-option label="草稿" value="draft" />
-          <el-option label="已停用" value="inactive" />
+          <el-option label="全部" value="" />
+          <el-option label="草稿" :value="WorkflowStatus.DRAFT" />
+          <el-option label="已发布" :value="WorkflowStatus.PUBLISHED" />
+          <el-option label="已归档" :value="WorkflowStatus.ARCHIVED" />
         </el-select>
+      </div>
+      <div class="right">
+        <el-button type="primary" :icon="Plus" @click="handleCreateWorkflow">新建工作流</el-button>
       </div>
     </div>
 
     <!-- 工作流列表 -->
     <div class="workflow-list">
-      <div v-if="workflowList.length === 0 && !loading" class="empty-state">
-        <el-empty description="暂无工作流数据">
-          <el-button type="primary" :icon="Plus" @click="handleCreateWorkflow">
-            创建第一个工作流
-          </el-button>
-        </el-empty>
-      </div>
+      <el-empty v-if="!loading && workflowList.length === 0" description="暂无工作流数据" />
 
-      <div v-else class="workflow-grid">
-        <div
-          v-for="item in workflowList"
-          :key="item.id"
-          class="workflow-card"
-          @click="editWorkflow(item.id)"
-        >
+      <div v-else class="workflow-cards">
+        <div v-for="item in workflowList" :key="item.id" class="workflow-card">
           <div class="card-header">
-            <div class="card-title-row">
-              <h3 class="card-title">{{ item.name }}</h3>
-              <el-dropdown trigger="click" @command="(cmd) => handleCommand(cmd, item)" @click.stop>
-                <el-button text :icon="MoreFilled" class="more-btn" @click.stop />
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item :icon="Edit" command="edit">编辑</el-dropdown-item>
-                    <el-dropdown-item :icon="VideoPlay" command="run">运行</el-dropdown-item>
-                    <el-dropdown-item :icon="CopyDocument" command="copy">复制</el-dropdown-item>
-                    <el-dropdown-item :icon="Delete" command="delete" divided>删除</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+            <div class="title-row">
+              <h3 class="workflow-name">{{ item.name }}</h3>
+              <el-tag :type="getStatusConfig(item.status).type" size="small">
+                {{ getStatusConfig(item.status).label }}
+              </el-tag>
             </div>
-            <el-tag :type="getStatusConfig(item.status).type" size="small">
-              {{ getStatusConfig(item.status).label }}
-            </el-tag>
+            <p class="workflow-desc">{{ item.description || '暂无描述' }}</p>
           </div>
 
-          <p class="card-description">{{ item.description || '暂无描述' }}</p>
-
-          <div class="card-stats">
-            <div class="stat-item">
-              <span class="stat-label">节点数量</span>
-              <span class="stat-value">{{ item.nodeCount || 0 }}</span>
+          <div class="card-body">
+            <div class="info-item">
+              <span class="label">创建人：</span>
+              <span class="value">{{ formatPerson(item.createdBy, item.createdById) }}</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">版本</span>
-              <span class="stat-value">{{ item.version || '-' }}</span>
+            <div class="info-item">
+              <span class="label">创建时间：</span>
+              <span class="value">{{ formatTime(item.createdAt) }}</span>
+            </div>
+            <div class="info-item" v-if="item.published">
+              <span class="label">发布人：</span>
+              <span class="value">{{ formatPerson(item.publishedBy, item.publishedById) }}</span>
+            </div>
+            <div class="info-item" v-if="item.publishedAt">
+              <span class="label">发布时间：</span>
+              <span class="value">{{ formatTime(item.publishedAt) }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">版本：</span>
+              <span class="value">v{{ item.version || 1 }}</span>
             </div>
           </div>
 
           <div class="card-footer">
             <div class="footer-time">
-              <el-icon :size="14"><Clock /></el-icon>
-              <span>{{ formatTime(item.lastModified) }}</span>
+              <el-icon><Clock /></el-icon>
+              <span>{{ formatTime(item.updatedAt || item.createdAt) }}</span>
             </div>
             <div class="footer-actions">
-              <el-button size="small" text :icon="VideoPlay" @click.stop="runWorkflow(item)">
-                运行
+              <el-button text size="small" @click="editWorkflow(item.id)">
+                <el-icon><Edit /></el-icon>
+                编辑
               </el-button>
-              <el-button size="small" text :icon="Setting" @click.stop="editWorkflow(item.id)">
-                配置
+              <el-button
+                v-if="!item.published"
+                text
+                size="small"
+                type="success"
+                @click="handlePublishWorkflow(item)"
+              >
+                <el-icon><CircleCheck /></el-icon>
+                发布
+              </el-button>
+              <el-button
+                v-else
+                text
+                size="small"
+                type="warning"
+                @click="handleUnpublishWorkflow(item)"
+              >
+                <el-icon><CircleClose /></el-icon>
+                取消发布
+              </el-button>
+              <el-button text size="small" @click="copyWorkflow(item)">
+                <el-icon><CopyDocument /></el-icon>
+                复制
+              </el-button>
+              <el-button text size="small" type="danger" @click="deleteWorkflow(item)">
+                <el-icon><Delete /></el-icon>
+                删除
               </el-button>
             </div>
           </div>
@@ -404,7 +426,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 分页组件 -->
+    <!-- 分页 -->
     <div class="pagination-wrapper" v-if="total > 0">
       <el-pagination
         v-model:current-page="currentPage"
@@ -421,153 +443,120 @@ onMounted(() => {
 
 <style scoped>
 .workflow-view {
-  padding: 0;
+  padding: 24px;
+  background: #f5f7fa;
+  min-height: 100vh;
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
   margin-bottom: 24px;
 }
 
-.header-left {
-  flex: 1;
-}
-
-.page-title {
+.page-header h2 {
+  margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
   color: #1f2937;
-  margin: 0 0 8px 0;
 }
 
-.page-desc {
-  font-size: 14px;
-  color: #6b7280;
+.subtitle {
   margin: 0;
+  color: #6b7280;
+  font-size: 14px;
 }
 
-.filter-bar {
+.toolbar {
   display: flex;
-  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 24px;
-  padding: 16px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: white;
+  padding: 16px 20px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.search-box {
-  flex: 1;
-}
-
-.filter-options {
+.toolbar .left {
   display: flex;
   gap: 12px;
 }
 
 .workflow-list {
-  min-height: 400px;
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.empty-state {
-  padding: 60px 20px;
-  background: #fff;
-  border-radius: 12px;
-}
-
-.workflow-grid {
+.workflow-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
 }
 
 .workflow-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  cursor: pointer;
-  transition: all 0.3s ease;
   border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  transition: all 0.2s;
 }
 
 .workflow-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   border-color: #6366f1;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
 }
 
 .card-header {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.title-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
-.card-title-row {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
+  margin-bottom: 8px;
 }
 
-.card-title {
+.workflow-name {
+  margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.workflow-desc {
   margin: 0;
+  font-size: 13px;
+  color: #6b7280;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.more-btn {
-  padding: 4px;
-  color: #9ca3af;
-}
-
-.more-btn:hover {
-  color: #6366f1;
-  background: #f3f4f6;
-}
-
-.card-description {
-  font-size: 14px;
-  color: #6b7280;
-  line-height: 1.5;
-  margin: 0 0 16px 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 42px;
-}
-
-.card-stats {
-  display: flex;
-  gap: 24px;
-  padding: 12px 0;
-  border-top: 1px solid #f3f4f6;
-  border-bottom: 1px solid #f3f4f6;
+.card-body {
   margin-bottom: 12px;
 }
 
-.stat-item {
+.info-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  font-size: 13px;
+  margin-bottom: 6px;
 }
 
-.stat-label {
-  font-size: 12px;
+.info-item .label {
   color: #9ca3af;
+  width: 70px;
+  flex-shrink: 0;
 }
 
-.stat-value {
-  font-size: 14px;
-  font-weight: 500;
+.info-item .value {
   color: #374151;
 }
 
@@ -575,6 +564,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
 }
 
 .footer-time {
@@ -587,15 +578,40 @@ onMounted(() => {
 
 .footer-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
 }
 
 .footer-actions .el-button {
   color: #6366f1;
+  padding: 4px 8px;
 }
 
 .footer-actions .el-button:hover {
   background: #eef2ff;
+}
+
+.footer-actions .el-button--danger {
+  color: #ef4444;
+}
+
+.footer-actions .el-button--danger:hover {
+  background: #fef2f2;
+}
+
+.footer-actions .el-button--success {
+  color: #10b981;
+}
+
+.footer-actions .el-button--success:hover {
+  background: #ecfdf5;
+}
+
+.footer-actions .el-button--warning {
+  color: #f59e0b;
+}
+
+.footer-actions .el-button--warning:hover {
+  background: #fffbeb;
 }
 
 .pagination-wrapper {
