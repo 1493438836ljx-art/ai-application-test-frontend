@@ -10,21 +10,11 @@
 import { ref, computed } from 'vue'
 import { getNodeTypes } from '@/api/nodeType'
 
-// 节点分类配置
+// 节点分类配置（核心3个分类）
 export const NODE_CATEGORIES = [
   { key: 'BASIC', name: '基础节点', description: '工作流起始和结束节点' },
   { key: 'LOGIC', name: '逻辑控制', description: '条件分支、循环、批处理等' },
   { key: 'EXECUTION', name: '执行节点', description: '从 Skill 库加载的执行节点' },
-  // 保留原有分类兼容性
-  { key: 'DATA_PREPARE', name: '数据准备', description: '数据准备相关节点' },
-  { key: 'TEXT', name: '文本处理', description: '文本处理节点' },
-  { key: 'IMAGE', name: '图像处理', description: '图像处理节点' },
-  { key: 'AUDIO_VIDEO', name: '音视频处理', description: '音视频处理节点' },
-  { key: 'TEST_DESIGN', name: '测试设计', description: '测试设计节点' },
-  { key: 'TEST_EXEC', name: '测试执行', description: '测试执行节点' },
-  { key: 'EVALUATE', name: '结果评估', description: '结果评估节点' },
-  { key: 'OUTPUT', name: '结果输出', description: '结果输出节点' },
-  { key: 'REPORT', name: '报告生成', description: '报告生成节点' },
 ]
 
 // 节点类型详细定义（设计文档规定的9种核心类型）
@@ -148,9 +138,9 @@ export const NODE_TYPE_DEFINITIONS = {
   },
 }
 
-// 默认节点类型配置（用于后端未返回时的回退）
+// 默认节点类型配置（核心9种类型，用于后端未返回时的回退）
 const DEFAULT_NODE_TYPES = [
-  // 基础节点（核心9种类型）
+  // 基础节点
   NODE_TYPE_DEFINITIONS.start,
   NODE_TYPE_DEFINITIONS.end,
   // 逻辑控制节点
@@ -164,12 +154,6 @@ const DEFAULT_NODE_TYPES = [
   NODE_TYPE_DEFINITIONS.skill,
   // 循环体画布（特殊类型，不在选择器中显示）
   { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC', hidden: true },
-  // 保留兼容性节点
-  { type: 'textClean', name: '文本清洗', icon: 'Document', color: '#6366f1', category: 'DATA_PREPARE' },
-  { type: 'tableExtract', name: '表格提取', icon: 'Files', color: '#8b5cf6', category: 'DATA_PREPARE' },
-  { type: 'apiAuto', name: 'HTTPS/HTTP接口调用', icon: 'Connection', color: '#3b82f6', category: 'TEST_EXEC' },
-  { type: 'judgeModel', name: '裁判模型', icon: 'DataAnalysis', color: '#ec4899', category: 'EVALUATE' },
-  { type: 'tableGenerate', name: '表格生成', icon: 'Grid', color: '#22c55e', category: 'OUTPUT' },
 ]
 
 /**

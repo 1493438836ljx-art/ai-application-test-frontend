@@ -94,6 +94,7 @@ import {
   CirclePlus,
   Filter,
   Operation,
+  Rank,
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -156,6 +157,7 @@ const iconComponentMap = {
   CirclePlus,
   Filter,
   Operation,
+  Rank,
 }
 
 // 获取图标组件

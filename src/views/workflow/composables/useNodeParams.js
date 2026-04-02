@@ -190,15 +190,27 @@ export const getNodeInputParams = (node) => {
     }))
   }
 
-  // 循环节点：从 inputParams 读取（固定参数）
-  if (node.type === 'loop') {
-    const inputParams = node.inputParams || []
-    if (inputParams.length === 0) {
-      return [{ name: '-', type: '-', isPlaceholder: true }]
+  // 条件判断节点：从 inputs 读取输入端口
+  if (node.type === 'condition') {
+    const inputs = node.inputs || []
+    if (inputs.length === 0) {
+      return []
     }
-    return inputParams.map((param) => ({
-      name: param.name || '',
-      type: formatParamType(param),
+    return inputs.map((input) => ({
+      name: input.name || '',
+      type: formatParamType(input),
+    }))
+  }
+
+  // 条件判断节点：从 outputs 读取输出端口
+  if (node.type === 'condition') {
+    const outputs = node.outputs || []
+    if (outputs.length === 0) {
+      return []
+    }
+    return outputs.map((output) => ({
+      name: output.name || '',
+      type: 'Any',
     }))
   }
 

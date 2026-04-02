@@ -31,12 +31,18 @@ import {
   ArrowRight,
   Position,
   Loading,
+  Share,
+  DataLine,
+  Cpu,
+  FolderAdd,
+  Refresh,
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/chat/AiChat.vue'
 import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
 import JsonTreeView from '@/components/workflow/JsonTreeView.vue'
 import { useAssociations } from './composables/useAssociations'
 import { useNodeParams, flattenJsonTree, getNodeOutputParams } from './composables/useNodeParams'
+import { generateCopyName, getExistingNames } from './utils/nodeCopyName'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
 import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow } from '@/api/workflow.js'
@@ -81,37 +87,28 @@ watch(
   { immediate: true }
 )
 
-// 节点类型分组配置（与后端分类对应）
+// 节点类型分组配置（核心3个分类）
 const nodeCategories = [
   { key: 'BASIC', name: '基础节点' },
   { key: 'LOGIC', name: '逻辑控制' },
-  { key: 'DATA_PREPARE', name: '数据准备' },
-  { key: 'TEXT', name: '文本处理' },
-  { key: 'IMAGE', name: '图像处理' },
-  { key: 'AUDIO_VIDEO', name: '音视频处理' },
-  { key: 'TEST_DESIGN', name: '测试设计' },
-  { key: 'TEST_EXEC', name: '测试执行' },
-  { key: 'EVALUATE', name: '结果评估' },
-  { key: 'OUTPUT', name: '结果输出' },
-  { key: 'REPORT', name: '报告生成' },
+  { key: 'EXECUTION', name: '执行节点' },
 ]
 
-// 节点类型配置（从后端动态获取）
+// 节点类型配置（核心9种类型，从后端动态获取）
 const nodeTypes = ref([
-  // 基础（不在弹窗中显示）
-  { type: 'start', name: '开始', icon: 'VideoPlay', color: '#10b981', category: 'BASIC' },
+  // 基础节点（不在弹窗中显示）
+  { type: 'start', name: '开始', icon: 'VideoPlay', color: '#22c55e', category: 'BASIC' },
   { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'BASIC' },
-  { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC' },
-  // 逻辑处理
-  { type: 'loop', name: '循环', icon: 'Timer', color: '#3b82f6', category: 'LOGIC' },
-  // 测试准备
-  { type: 'textClean', name: '文本清洗', icon: 'Document', color: '#6366f1', category: 'DATA_PREPARE' },
-  // 测试执行
-  { type: 'apiAuto', name: 'HTTPS/HTTP接口调用', icon: 'Connection', color: '#3b82f6', category: 'TEST_EXEC' },
-  // 结果评估
-  { type: 'judgeModel', name: '裁判模型', icon: 'DataAnalysis', color: '#ec4899', category: 'EVALUATE' },
-  // 表格生成
-  { type: 'tableGenerate', name: '表格生成', icon: 'Grid', color: '#22c55e', category: 'OUTPUT' },
+  { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC', hidden: true },
+  // 逻辑控制节点
+  { type: 'loop', name: '循环', icon: 'Refresh', color: '#8b5cf6', category: 'LOGIC' },
+  { type: 'condition_simple', name: '条件分支', icon: 'Share', color: '#f59e0b', category: 'LOGIC' },
+  { type: 'condition_multi', name: '多路分支', icon: 'Grid', color: '#f97316', category: 'LOGIC' },
+  { type: 'batch', name: '批处理', icon: 'DataLine', color: '#3b82f6', category: 'LOGIC' },
+  { type: 'async', name: '异步处理', icon: 'Connection', color: '#0ea5e9', category: 'LOGIC' },
+  { type: 'collect', name: '结果收集', icon: 'FolderAdd', color: '#14b8a6', category: 'LOGIC' },
+  // 执行节点
+  { type: 'skill', name: '技能', icon: 'Cpu', color: '#6366f1', category: 'EXECUTION' },
 ])
 
 // 加载节点类型数据
@@ -119,83 +116,57 @@ const loadNodeTypes = async () => {
   try {
     const response = await getNodeTypes()
     if (response && Array.isArray(response)) {
-      // 保留基础节点类型（不在弹窗中显示）
+      // 基础节点类型（不在弹窗中显示）
       const basicNodeTypes = [
-        { type: 'start', name: '开始', icon: 'VideoPlay', color: '#10b981', category: 'BASIC' },
+        { type: 'start', name: '开始', icon: 'VideoPlay', color: '#22c55e', category: 'BASIC' },
         { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'BASIC' },
-        { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC' },
+        { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC', hidden: true },
       ]
-      // 前端固定节点类型（即使后端没有返回也会显示）
-      const fixedNodeTypes = [
-        { type: 'tableGenerate', name: '表格生成', icon: 'Grid', color: '#22c55e', category: 'OUTPUT' },
+      // 核心节点类型定义（前端回退）
+      const coreNodeTypeDefinitions = [
+        { type: 'loop', name: '循环', icon: 'Refresh', color: '#8b5cf6', category: 'LOGIC' },
+        { type: 'condition_simple', name: '条件分支', icon: 'Share', color: '#f59e0b', category: 'LOGIC' },
+        { type: 'condition_multi', name: '多路分支', icon: 'Grid', color: '#f97316', category: 'LOGIC' },
+        { type: 'batch', name: '批处理', icon: 'DataLine', color: '#3b82f6', category: 'LOGIC' },
+        { type: 'async', name: '异步处理', icon: 'Connection', color: '#0ea5e9', category: 'LOGIC' },
+        { type: 'collect', name: '结果收集', icon: 'FolderAdd', color: '#14b8a6', category: 'LOGIC' },
+        { type: 'skill', name: '技能', icon: 'Cpu', color: '#6366f1', category: 'EXECUTION' },
       ]
-      // 默认图标映射（用于后端未返回icon的情况）
-      const defaultIconMap = {
-        condition: 'Share',
+      // 核心节点图标映射
+      const coreIconMap = {
         loop: 'Refresh',
-        envConnect: 'Connection',
-        tableExtract: 'Document',
-        textClean: 'Scissors',
-        textDedupe: 'CopyDocument',
-        textGeneralize: 'EditPen',
-        textGenerate: 'Edit',
-        imageGenerate: 'Picture',
-        imageCutout: 'Crop',
-        imageEnhance: 'MagicStick',
-        videoExtractAudio: 'Headset',
-        audioToText: 'Microphone',
-        videoFrame: 'VideoCamera',
-        testPlan: 'List',
-        apiAuto: 'Connection',
-        aiAuto: 'Cpu',
-        judgeModel: 'DataAnalysis',
-        tableGenerate: 'Grid',
-        firstTokenLatency: 'Timer',
-        tokenOutputTime: 'Stopwatch',
-        e2eLatency: 'Clock',
-        reportGenerate: 'Document',
-        reportAnalysis: 'Search',
+        condition_simple: 'Share',
+        condition_multi: 'Grid',
+        batch: 'DataLine',
+        async: 'Connection',
+        collect: 'FolderAdd',
+        skill: 'Cpu',
       }
-      // 默认颜色映射
-      const defaultColorMap = {
-        condition: '#f59e0b',
+      // 核心节点颜色映射
+      const coreColorMap = {
         loop: '#8b5cf6',
-        envConnect: '#3b82f6',
-        tableExtract: '#6366f1',
-        textClean: '#14b8a6',
-        textDedupe: '#64748b',
-        textGeneralize: '#8b5cf6',
-        textGenerate: '#06b6d4',
-        imageGenerate: '#ec4899',
-        imageCutout: '#f43f5e',
-        imageEnhance: '#a855f7',
-        videoExtractAudio: '#0ea5e9',
-        audioToText: '#14b8a6',
-        videoFrame: '#f97316',
-        testPlan: '#3b82f6',
-        apiAuto: '#3b82f6',
-        aiAuto: '#f97316',
-        judgeModel: '#ec4899',
-        tableGenerate: '#22c55e',
-        firstTokenLatency: '#f59e0b',
-        tokenOutputTime: '#84cc16',
-        e2eLatency: '#06b6d4',
-        reportGenerate: '#3b82f6',
-        reportAnalysis: '#8b5cf6',
+        condition_simple: '#f59e0b',
+        condition_multi: '#f97316',
+        batch: '#3b82f6',
+        async: '#0ea5e9',
+        collect: '#14b8a6',
+        skill: '#6366f1',
       }
       // 映射后端数据到前端格式
       const apiNodeTypes = response.map((item) => ({
-        type: item.code, // 后端字段 code 映射为前端 type
+        type: item.code,
         name: item.name,
-        icon: item.icon || defaultIconMap[item.code] || 'Document',
-        color: item.color || defaultColorMap[item.code] || '#6366f1',
+        icon: item.icon || coreIconMap[item.code] || 'Document',
+        color: item.color || coreColorMap[item.code] || '#6366f1',
         category: item.category,
         description: item.description,
       }))
-      // 合并节点类型：基础节点 + API节点 + 固定节点（去重）
+      // 合并节点类型：API节点 + 前端回退节点（去重）
       const apiTypeSet = new Set(apiNodeTypes.map(n => n.type))
-      const filteredFixedTypes = fixedNodeTypes.filter(n => !apiTypeSet.has(n.type))
-      nodeTypes.value = [...basicNodeTypes, ...apiNodeTypes, ...filteredFixedTypes]
+      // 只添加后端没有返回的基础节点
+      const filteredBasicTypes = basicNodeTypes.filter(n => !apiTypeSet.has(n.type))
+      const filteredCoreTypes = coreNodeTypeDefinitions.filter(n => !apiTypeSet.has(n.type))
+      nodeTypes.value = [...apiNodeTypes, ...filteredBasicTypes, ...filteredCoreTypes]
     }
   } catch (error) {
     console.error('加载节点类型失败:', error)
@@ -203,11 +174,15 @@ const loadNodeTypes = async () => {
   }
 }
 
-// 节点功能描述映射
+// 节点功能描述映射（核心节点）
 const nodeDescriptions = {
-  textClean: '对文本数据进行清洗、过滤和标准化处理',
-  tableExtract: '从Excel表格中提取数据，支持指定工作表、行列范围和列配置',
-  tableGenerate: '根据输入数据生成Excel表格文件',
+  loop: '循环遍历执行，支持计数循环和数组遍历',
+  condition_simple: '二分支条件判断，true/false 两个分支',
+  condition_multi: '多路条件分支，支持多个 case 和 default',
+  batch: '批量并行处理，提高执行效率',
+  async: '异步执行节点，不阻塞主流程',
+  collect: '收集多个分支的执行结果',
+  skill: '从 Skill 库加载的执行节点',
 }
 
 // 使用变量类型 Store
@@ -274,6 +249,12 @@ const iconComponents = {
   Document,
   Connection,
   DataAnalysis,
+  Share,
+  Grid,
+  DataLine,
+  Cpu,
+  FolderAdd,
+  Refresh,
 }
 
 // 节点列表
@@ -457,6 +438,9 @@ const dragState = reactive({
   startY: 0,
   offsetX: 0,
   offsetY: 0,
+  hasMoved: false, // 是否真正移动了（用于区分点击和拖拽）
+  isMultiDrag: false, // 是否多节点拖拽
+  multiNodeStartPositions: {}, // 多节点拖拽时的起始位置
 })
 
 // 画布拖拽状态
@@ -467,6 +451,47 @@ const canvasDragState = reactive({
   startOffsetX: 0,
   startOffsetY: 0,
 })
+
+// 计算节点高度（用于端口位置计算）
+const calculateNodeHeight = (node) => {
+  const nodeWidth = 220
+
+  // 开始节点
+  if (node.type === 'start') {
+    const params = getNodeOutputParams(node)
+    const paramsHeight = params.length > 0 ? 32 : 0
+    return 56 + paramsHeight
+  }
+
+  // 结束节点
+  if (node.type === 'end') {
+    const inputParams = getNodeInputParams(node)
+    let nodeHeight = 56
+    if (inputParams.length > 0) {
+      nodeHeight += 45
+    }
+    return nodeHeight
+  }
+
+  // 普通节点
+  const inputParams = getNodeInputParams(node)
+  const outputParams = getNodeOutputParams(node)
+
+  // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
+  let nodeHeight = 56
+
+  // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
+  if (inputParams.length > 0) {
+    nodeHeight += 46
+  }
+
+  // 如果有输出参数，增加输出参数区域高度
+  if (outputParams.length > 0) {
+    nodeHeight += 46
+  }
+
+  return nodeHeight
+}
 
 // 直接从节点数据计算端口位置（不依赖 DOM 测量，避免缩放时的时序问题）
 const getPortPosition = (node, paramIndex, type) => {
@@ -501,20 +526,52 @@ const getPortPosition = (node, paramIndex, type) => {
     }
   }
 
-  // 输入端口在节点左侧
+  // 输入端口在节点左侧 - 在节点垂直中心位置
   if (type === 'input') {
-    const y = getNodeParamPortPosition(node, paramIndex, 'input')
+    // 计算普通节点的实际高度
+    const inputParams = getNodeInputParams(node)
+    const outputParams = getNodeOutputParams(node)
+
+    // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
+    let nodeHeight = 56
+
+    // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
+    if (inputParams.length > 0) {
+      nodeHeight += 46
+    }
+
+    // 如果有输出参数，增加输出参数区域高度
+    if (outputParams.length > 0) {
+      nodeHeight += 46
+    }
+
     return {
       x: node.x,
-      y: y,
+      y: node.y + nodeHeight / 2,
     }
   }
 
-  // 输出端口在节点右侧
-  const y = getNodeParamPortPosition(node, paramIndex, 'output')
+  // 输出端口在节点右侧 - 在节点垂直中心位置
+  // 计算普通节点的实际高度（与输入端口相同）
+  const inputParams = getNodeInputParams(node)
+  const outputParams = getNodeOutputParams(node)
+
+  // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
+  let nodeHeight = 56
+
+  // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
+  if (inputParams.length > 0) {
+    nodeHeight += 46
+  }
+
+  // 如果有输出参数，增加输出参数区域高度
+  if (outputParams.length > 0) {
+    nodeHeight += 46
+  }
+
   return {
     x: node.x + nodeWidth,
-    y: y,
+    y: node.y + nodeHeight / 2,
   }
 }
 
@@ -1907,37 +1964,150 @@ const duplicateNode = () => {
   ElMessage.success('副本创建成功')
 }
 
-// 删除选中节点
-const deleteSelectedNode = () => {
-  if (!selectedNode.value) return
+// ========== 剪贴板功能 ==========
 
-  const nodeId = selectedNode.value.id
+// 节点剪贴板
+const nodeClipboard = ref([])
 
-  // 如果是循环节点，删除关联的循环体画布和关联线
-  if (selectedNode.value.type === 'loop') {
-    const loopBodyId = getLoopBodyIdByLoopId(nodeId)
-    if (loopBodyId) {
-      // 删除循环体画布节点
-      nodes.value = nodes.value.filter((n) => n.id !== loopBodyId)
-      // 删除关联线
-      associations.value = associations.value.filter((a) => a.sourceId !== nodeId)
-    }
+// 全选所有节点
+const selectAllNodes = () => {
+  selectedNodeUuids.value = nodes.value
+    .filter((n) => n.type !== 'loopBodyCanvas') // 不选择循环体画布
+    .map((n) => n.id)
+  selectedConnection.value = null
+  if (selectedNodeUuids.value.length > 0) {
+    const firstNode = nodes.value.find((n) => n.id === selectedNodeUuids.value[0])
+    selectedNode.value = firstNode || null
+  }
+  ElMessage.success(`已选择 ${selectedNodeUuids.value.length} 个节点`)
+}
+
+// 复制选中的节点
+const copySelectedNodes = () => {
+  const nodeIds = selectedNodeUuids.value.length > 0
+    ? [...selectedNodeUuids.value]
+    : (selectedNode.value ? [selectedNode.value.id] : [])
+
+  if (nodeIds.length === 0) {
+    ElMessage.warning('请先选择要复制的节点')
+    return
   }
 
-  // 如果是循环体画布节点，删除关联线和关联的循环节点
-  if (selectedNode.value.type === 'loopBodyCanvas') {
-    const loopId = selectedNode.value.belongsTo
-    if (loopId) {
-      // 删除关联线
-      associations.value = associations.value.filter((a) => a.targetId !== nodeId)
-    }
+  // 过滤掉不能复制的节点（start/end）
+  const copyableNodes = nodeIds.filter((id) => {
+    const node = nodes.value.find((n) => n.id === id)
+    return node && node.type !== 'start' && node.type !== 'end' && node.type !== 'loopBodyCanvas'
+  })
+
+  if (copyableNodes.length === 0) {
+    ElMessage.warning('选中的节点不支持复制')
+    return
   }
 
-  nodes.value = nodes.value.filter((n) => n.id !== nodeId)
+  // 深拷贝节点到剪贴板
+  nodeClipboard.value = copyableNodes.map((id) => {
+    const node = nodes.value.find((n) => n.id === id)
+    return JSON.parse(JSON.stringify(node))
+  })
+
+  ElMessage.success(`已复制 ${nodeClipboard.value.length} 个节点`)
+}
+
+// 粘贴节点
+const pasteNodes = () => {
+  if (nodeClipboard.value.length === 0) {
+    ElMessage.warning('剪贴板为空')
+    return
+  }
+
+  // 获取现有节点名称列表（用于去重）
+  const existingNames = nodes.value.map((n) => n.name)
+
+  // 创建新节点
+  const newNodes = nodeClipboard.value.map((nodeData) => {
+    const newNode = {
+      ...nodeData,
+      id: `${nodeData.type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: generateCopyName(nodeData.name, existingNames),
+      x: nodeData.x + 30,
+      y: nodeData.y + 30,
+    }
+    // 更新名称列表
+    existingNames.push(newNode.name)
+    return newNode
+  })
+
+  // 添加节点到画布
+  newNodes.forEach((node) => {
+    nodes.value.push(node)
+  })
+
+  // 选中新粘贴的节点
+  selectedNodeUuids.value = newNodes.map((n) => n.id)
+  selectedNode.value = newNodes[0]
+
+  ElMessage.success(`已粘贴 ${newNodes.length} 个节点`)
+}
+
+// 删除选中的节点（支持批量删除）
+const deleteSelectedNodes = async () => {
+  // 获取要删除的节点 ID 列表
+  const nodeIds = selectedNodeUuids.value.length > 0
+    ? [...selectedNodeUuids.value]
+    : (selectedNode.value ? [selectedNode.value.id] : [])
+
+  if (nodeIds.length === 0) return
+
+  // 检查是否包含 start/end 节点（不允许删除）
+  const protectedNodes = nodeIds.filter((id) => {
+    const node = nodes.value.find((n) => n.id === id)
+    return node?.type === 'start' || node?.type === 'end'
+  })
+
+  if (protectedNodes.length > 0) {
+    ElMessage.warning('开始和结束节点不能删除')
+    return
+  }
+
+  // 处理循环节点和循环体画布的关联
+  nodeIds.forEach((nodeId) => {
+    const node = nodes.value.find((n) => n.id === nodeId)
+    if (node?.type === 'loop') {
+      const loopBodyId = getLoopBodyIdByLoopId(nodeId)
+      if (loopBodyId) {
+        // 删除循环体画布节点
+        nodes.value = nodes.value.filter((n) => n.id !== loopBodyId)
+        // 删除关联线
+        associations.value = associations.value.filter((a) => a.sourceId !== nodeId)
+      }
+    }
+    if (node?.type === 'loopBodyCanvas') {
+      const loopId = node.belongsTo
+      if (loopId) {
+        // 删除关联线
+        associations.value = associations.value.filter((a) => a.targetId !== nodeId)
+      }
+    }
+  })
+
+  // 删除节点
+  nodes.value = nodes.value.filter((n) => !nodeIds.includes(n.id))
+
+  // 删除相关连线（级联删除）
   connections.value = connections.value.filter(
-    (c) => c.sourceId !== nodeId && c.targetId !== nodeId
+    (c) => !nodeIds.includes(c.sourceId) && !nodeIds.includes(c.targetId)
   )
+
+  // 清空选择状态
   selectedNode.value = null
+  selectedNodeUuids.value = []
+
+  ElMessage.success(`已删除 ${nodeIds.length} 个节点`)
+}
+
+// 兼容旧的单节点删除函数
+const deleteSelectedNode = () => {
+  deleteSelectedNodes()
 }
 
 // 删除选中连线
@@ -1947,12 +2117,36 @@ const deleteSelectedConnection = () => {
   selectedConnection.value = null
 }
 
-// 选中节点
-const selectNode = (node, event) => {
+// 多选节点 UUID 列表（用于批量操作）
+const selectedNodeUuids = ref([])
+
+// 选中节点（支持多选，单击不打开配置面板）
+const selectNode = (node, event, multiSelect = false) => {
   event?.stopPropagation()
   hideContextMenu()
-  selectedNode.value = node
   selectedConnection.value = null
+
+  // 多选模式：使用 Ctrl/Cmd + 点击
+  if (multiSelect) {
+    // 切换选中状态
+    const index = selectedNodeUuids.value.indexOf(node.id)
+    if (index > -1) {
+      // 已选中则取消选中
+      selectedNodeUuids.value.splice(index, 1)
+      // 如果当前编辑的节点被取消选中，清空 selectedNode
+      if (selectedNode.value?.id === node.id) {
+        selectedNode.value = null
+      }
+    } else {
+      // 未选中则添加
+      selectedNodeUuids.value.push(node.id)
+    }
+  } else {
+    // 单选模式：只选中节点，不打开配置面板
+    selectedNodeUuids.value = [node.id]
+    // 不再自动设置 selectedNode.value，避免打开配置面板
+  }
+
   // 初始化条件判断节点配置
   if (node.type === 'condition') {
     initConditionConfig()
@@ -1983,6 +2177,31 @@ const deselectAll = () => {
   selectedConnection.value = null
   hoveredConnection.value = null
   showAddNodePopover.value = null
+  selectedNodeUuids.value = []
+}
+
+// 检查节点是否选中
+const isNodeSelected = (nodeId) => {
+  return selectedNodeUuids.value.includes(nodeId)
+}
+
+// 处理节点点击事件（支持多选）
+const handleNodeClick = (node, event) => {
+  const multiSelect = event?.ctrlKey || event?.metaKey
+  selectNode(node, event, multiSelect)
+}
+
+// 双击打开节点配置面板
+const openNodeConfig = (node) => {
+  selectedNode.value = node
+  // 初始化条件判断节点配置
+  if (node.type === 'condition' || node.type === 'condition_simple') {
+    initConditionConfig()
+  }
+  // 初始化文本清洗节点配置
+  if (node.type === 'textClean') {
+    initTextCleanConfig()
+  }
 }
 
 // 处理画布点击事件
@@ -3136,15 +3355,32 @@ const addConnectedNode = (type) => {
   if (!parentNode) return
 
   const typeConfig = getNodeTypeConfig(type)
+
+  // 节点宽度常量
+  const nodeWidth = 220
+
   const newNode = {
     id: `${type}-${Date.now()}`,
     type,
     name: typeConfig.name,
-    x: parentNode.x + 280,
+    x: parentNode.x + nodeWidth + nodeWidth * 0.5, // 默认位置：源节点右侧，与源节点右边缘相隔0.5个节点宽度
     y: parentNode.y,
     inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
     outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
     config: {},
+  }
+
+
+  // 如果是从连线中间插入， 计算连线中点位置作为新节点位置
+  let insertX = parentNode.x + nodeWidth + nodeWidth * 0.5  // 源节点右侧，与源节点右边缘相隔0.5个节点宽度
+  let insertY = parentNode.y
+
+  if (insertConnection.value) {
+    const midpoint = getConnectionMidpoint(insertConnection.value)
+    if (midpoint) {
+      insertX = midpoint.x
+      insertY = midpoint.y
+    }
   }
 
   // 开始和结束节点特殊处理
@@ -3305,6 +3541,14 @@ const addConnectedNode = (type) => {
     createAssociation(newNode.id, loopBodyCanvas.id)
   }
 
+
+
+  // 应用计算好的插入位置
+  newNode.x = insertX
+  newNode.y = insertY  // 纵坐标与源节点一致
+
+
+
   nodes.value.push(newNode)
 
   // 如果是从连线中间插入
@@ -3328,6 +3572,8 @@ const addConnectedNode = (type) => {
         sourcePort: sourcePort.id,
         targetId: newNode.id,
         targetPort: newInputPort.id,
+        sourceParamIndex: 0,
+        targetParamIndex: 0,
       })
     }
 
@@ -3338,6 +3584,8 @@ const addConnectedNode = (type) => {
         sourcePort: newOutputPort.id,
         targetId: targetNode.id,
         targetPort: targetPort.id,
+        sourceParamIndex: 0,
+        targetParamIndex: 0,
       })
     }
   } else {
@@ -3352,6 +3600,8 @@ const addConnectedNode = (type) => {
         sourcePort: sourcePort.id,
         targetId: newNode.id,
         targetPort: targetPort.id,
+        sourceParamIndex: 0,
+        targetParamIndex: 0,
       }
       connections.value.push(newConnection)
     }
@@ -3365,14 +3615,37 @@ const addConnectedNode = (type) => {
 // 开始拖拽节点
 const startDragNode = (node, event) => {
   event.stopPropagation()
-  selectNode(node)
 
-  dragState.isDragging = true
-  dragState.node = node
-  dragState.startX = event.clientX
-  dragState.startY = event.clientY
-  dragState.offsetX = node.x
-  dragState.offsetY = node.y
+  // 如果拖拽的节点不在选中列表中，则选中它
+  if (!selectedNodeUuids.value.includes(node.id)) {
+    selectNode(node, event, false)
+  }
+
+  // 支持多节点拖拽
+  if (selectedNodeUuids.value.length > 1) {
+    // 多节点拖拽
+    dragState.isDragging = true
+    dragState.node = null // 不单独跟踪一个节点
+    dragState.isMultiDrag = true
+    dragState.startX = event.clientX
+    dragState.startY = event.clientY
+    dragState.multiNodeStartPositions = {}
+    selectedNodeUuids.value.forEach((id) => {
+      const n = nodes.value.find((item) => item.id === id)
+      if (n) {
+        dragState.multiNodeStartPositions[id] = { x: n.x, y: n.y }
+      }
+    })
+  } else {
+    // 单节点拖拽
+    dragState.isDragging = true
+    dragState.node = node
+    dragState.isMultiDrag = false
+    dragState.startX = event.clientX
+    dragState.startY = event.clientY
+    dragState.offsetX = node.x
+    dragState.offsetY = node.y
+  }
 
   document.addEventListener('mousemove', onDragNode)
   document.addEventListener('mouseup', stopDragNode)
@@ -3383,19 +3656,41 @@ const startDragNode = (node, event) => {
 
 // 拖拽节点
 const onDragNode = (event) => {
-  if (!dragState.isDragging || !dragState.node) return
+  if (!dragState.isDragging) return
 
   const dx = (event.clientX - dragState.startX) / canvas.scale
   const dy = (event.clientY - dragState.startY) / canvas.scale
 
-  dragState.node.x = Math.max(0, dragState.offsetX + dx)
-  dragState.node.y = Math.max(0, dragState.offsetY + dy)
+  // 标记已经移动
+  dragState.hasMoved = Math.abs(dx) > 2 || Math.abs(dy) > 2
+
+  if (dragState.isMultiDrag && dragState.multiNodeStartPositions) {
+    // 多节点拖拽
+    selectedNodeUuids.value.forEach((id) => {
+      const node = nodes.value.find((n) => n.id === id)
+      const startPos = dragState.multiNodeStartPositions[id]
+      if (node && startPos) {
+        node.x = Math.max(0, startPos.x + dx)
+        node.y = Math.max(0, startPos.y + dy)
+      }
+    })
+  } else if (dragState.node) {
+    // 单节点拖拽
+    dragState.node.x = Math.max(0, dragState.offsetX + dx)
+    dragState.node.y = Math.max(0, dragState.offsetY + dy)
+  }
 }
 
 // 停止拖拽节点
 const stopDragNode = () => {
+  // 拖拽只更新本地状态，用户需要手动保存
+  // 重置状态
   dragState.isDragging = false
   dragState.node = null
+  dragState.hasMoved = false
+  dragState.isMultiDrag = false
+  dragState.multiNodeStartPositions = {}
+
   document.removeEventListener('mousemove', onDragNode)
   document.removeEventListener('mouseup', stopDragNode)
 
@@ -3781,6 +4076,17 @@ const handleKeydown = (event) => {
     return
   }
 
+  // Delete/Backspace 键：删除选中的节点或连线
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    event.preventDefault()
+    if (selectedNodeUuids.value.length > 0 || selectedNode.value) {
+      deleteSelectedNodes()
+    } else if (selectedConnection.value) {
+      deleteSelectedConnection()
+    }
+    return
+  }
+
   // 空格键：进入平移模式
   if (event.code === 'Space' && !spaceKeyPressed.value) {
     event.preventDefault()
@@ -3802,6 +4108,18 @@ const handleKeydown = (event) => {
     } else if (event.key === '0') {
       event.preventDefault()
       resetZoom()
+    } else if (event.key === 'a') {
+      // Ctrl+A：全选节点
+      event.preventDefault()
+      selectAllNodes()
+    } else if (event.key === 'c') {
+      // Ctrl+C：复制节点
+      event.preventDefault()
+      copySelectedNodes()
+    } else if (event.key === 'v') {
+      // Ctrl+V：粘贴节点
+      event.preventDefault()
+      pasteNodes()
     }
   }
 }
@@ -4568,10 +4886,11 @@ onUnmounted(() => {
             :data-node-id="node.id"
             :data-node-type="node.type"
             class="flow-node"
-            :class="{ selected: selectedNode?.id === node.id }"
+            :class="{ selected: isNodeSelected(node.id) }"
             :style="{ left: `${node.x}px`, top: `${node.y}px` }"
             @mousedown="startDragNode(node, $event)"
-            @click.stop="selectNode(node, $event)"
+            @click.stop="handleNodeClick(node, $event)"
+            @dblclick.stop="openNodeConfig(node)"
             @contextmenu="showContextMenu(node, $event)"
           >
             <!-- 节点内容 -->

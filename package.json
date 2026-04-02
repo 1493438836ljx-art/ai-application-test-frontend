@@ -10,7 +10,14 @@
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
-    "format": "prettier --write --experimental-cli src/"
+    "format": "prettier --write --experimental-cli src/",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:nodes": "playwright test tests/node-management",
+    "test:nodes:ui": "playwright test tests/node-management --ui",
+    "test:nodes:debug": "playwright test tests/node-management --debug",
+    "test:nodes:report": "playwright show-report"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",

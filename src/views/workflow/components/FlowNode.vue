@@ -255,7 +255,9 @@ const handleMouseDown = (event) => {
 }
 
 const handleClick = (event) => {
-  emit('node-click', { event, node: props.node })
+  // 支持 Ctrl/Cmd + 点击进行多选
+  const multiSelect = event.ctrlKey || event.metaKey
+  emit('node-click', { event, node: props.node, multiSelect })
 }
 
 const handleContextMenu = (event) => {

@@ -44,7 +44,7 @@
         v-for="node in bodyNodes"
         :key="node.id"
         :node="node"
-        :is-selected="selectedBodyNode?.id === node.id"
+        :is-selected="isBodyNodeSelected(node.id)"
         :is-inside-loop-body="true"
         :position="{
           x: node.x + loopBodyCanvas.offsetX,
@@ -52,7 +52,7 @@
         }"
         :node-types="nodeTypes"
         @node-mousedown="({ event, node }) => startDragBodyNode(event, node)"
-        @node-click="({ node }) => selectBodyNode(node)"
+        @node-click="({ node, multiSelect }) => selectBodyNode(node, multiSelect)"
         @output-port-mousedown="({ event, node }) => startBodyConnection(event, node, 'output', 0)"
       />
 
