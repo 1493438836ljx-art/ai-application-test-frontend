@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -64,6 +64,22 @@ const canvas = reactive({
   width: 3000,
   height: 2000,
 })
+
+// 空格键状态（用于平移模式）
+const spaceKeyPressed = ref(false)
+
+// 缩放输入状态
+const showZoomInput = ref(false)
+const inputZoom = ref(100)
+
+// 监听 scale 变化，同步 inputZoom
+watch(
+  () => canvas.scale,
+  (newScale) => {
+    inputZoom.value = Math.round(newScale * 100)
+  },
+  { immediate: true }
+)
 
 // 节点类型分组配置（与后端分类对应）
 const nodeCategories = [
@@ -452,47 +468,53 @@ const canvasDragState = reactive({
   startOffsetY: 0,
 })
 
-// 获取添加按钮的实际 DOM 位置（用于开始节点的连线起点）
-const getActionBtnDomPosition = (nodeId) => {
-  const nodeElement = document.querySelector(`[data-node-id="${nodeId}"]`)
-  if (!nodeElement) return null
+// 直接从节点数据计算端口位置（不依赖 DOM 测量，避免缩放时的时序问题）
+const getPortPosition = (node, paramIndex, type) => {
+  const nodeWidth = 220
 
-  // 开始节点使用 node-start-action-btn 类
-  const btnElement = nodeElement.querySelector('.node-start-action-btn')
-  if (!btnElement) return null
-
-  const btnRect = btnElement.getBoundingClientRect()
-  const canvasRect = document.querySelector('.canvas')?.getBoundingClientRect()
-  if (!canvasRect) return null
-
-  return {
-    x: btnRect.left + btnRect.width / 2 - canvasRect.left,
-    y: btnRect.top + btnRect.height / 2 - canvasRect.top,
-  }
-}
-
-// 获取端口的实际 DOM 位置
-const getPortDomPosition = (nodeId, paramIndex, type, nodeType = null) => {
-  const nodeElement = document.querySelector(`[data-node-id="${nodeId}"]`)
-  if (!nodeElement) return null
-
-  // 如果是开始节点且类型是输出，使用添加按钮的位置
-  if (nodeType === 'start' && type === 'output') {
-    return getActionBtnDomPosition(nodeId)
+  // 开始节点的输出端口（添加按钮位置）- 在节点右侧垂直居中
+  if (node.type === 'start' && type === 'output') {
+    // 开始节点高度：border(2*2) + padding(12*2) + content(28) = 56px
+    // 如果有输出参数，高度增加：margin-top(12) + 内容(20) = 32px
+    const params = getNodeOutputParams(node)
+    const paramsHeight = params.length > 0 ? 32 : 0
+    const nodeHeight = 56 + paramsHeight
+    return {
+      x: node.x + nodeWidth - 2, // right: -6px 意味着端口中心在节点右边框内 2px
+      y: node.y + nodeHeight / 2,
+    }
   }
 
-  const portSelector = type === 'output' ? '.output-port' : '.input-port'
-  const ports = nodeElement.querySelectorAll(portSelector)
-  const portElement = ports[paramIndex]
-  if (!portElement) return null
+  // 结束节点的输入端口 - 在节点左侧垂直居中
+  if (node.type === 'end' && type === 'input') {
+    // 结束节点高度需要根据参数计算
+    const inputParams = getNodeInputParams(node)
+    // 基础高度：border(4) + padding(24) + header(28) = 56px
+    let nodeHeight = 56
+    if (inputParams.length > 0) {
+      // 参数区域：margin-top(12) + padding-top(10) + border-top(1) + 内容(约22px) ≈ 45px
+      nodeHeight += 45
+    }
+    return {
+      x: node.x + 2, // left: -6px 意味着端口中心在节点左边框内 2px
+      y: node.y + nodeHeight / 2,
+    }
+  }
 
-  const portRect = portElement.getBoundingClientRect()
-  const canvasRect = document.querySelector('.canvas')?.getBoundingClientRect()
-  if (!canvasRect) return null
+  // 输入端口在节点左侧
+  if (type === 'input') {
+    const y = getNodeParamPortPosition(node, paramIndex, 'input')
+    return {
+      x: node.x,
+      y: y,
+    }
+  }
 
+  // 输出端口在节点右侧
+  const y = getNodeParamPortPosition(node, paramIndex, 'output')
   return {
-    x: portRect.left + portRect.width / 2 - canvasRect.left,
-    y: portRect.top + portRect.height / 2 - canvasRect.top,
+    x: node.x + nodeWidth,
+    y: y,
   }
 }
 
@@ -507,36 +529,14 @@ const getConnectionPath = (connection) => {
   const sourceParamIndex = connection.sourceParamIndex ?? 0
   const targetParamIndex = connection.targetParamIndex ?? 0
 
-  // 尝试使用 DOM 获取端口实际位置
-  const sourcePortPos = getPortDomPosition(sourceNode.id, sourceParamIndex, 'output', sourceNode.type)
-  const targetPortPos = getPortDomPosition(targetNode.id, targetParamIndex, 'input', targetNode.type)
+  // 直接从节点数据计算端口位置（避免 DOM 测量的时序问题）
+  const sourcePortPos = getPortPosition(sourceNode, sourceParamIndex, 'output')
+  const targetPortPos = getPortPosition(targetNode, targetParamIndex, 'input')
 
-  let x1, y1, x2, y2
-
-  if (sourcePortPos && targetPortPos) {
-    x1 = sourcePortPos.x
-    y1 = sourcePortPos.y
-    x2 = targetPortPos.x
-    y2 = targetPortPos.y
-  } else {
-    // 回退到计算位置
-    const nodeWidth = 220
-    // 计算起点：开始节点使用添加按钮位置（right: -6px, width: 12px, center: 0）
-    // 其他节点使用节点右侧边缘
-    if (sourceNode.type === 'start') {
-      x1 = sourceNode.x + nodeWidth // 添加按钮中心位置（在节点右边框上）
-      // 开始节点的 Y 位置：节点垂直居中
-      const params = getNodeOutputParams(sourceNode)
-      const paramsHeight = params.length > 0 ? 32 : 0
-      const nodeHeight = 40 + paramsHeight
-      y1 = sourceNode.y + nodeHeight / 2
-    } else {
-      y1 = getNodeParamPortPosition(sourceNode, sourceParamIndex, 'output')
-      x1 = sourceNode.x + nodeWidth
-    }
-    y2 = getNodeParamPortPosition(targetNode, targetParamIndex, 'input')
-    x2 = targetNode.x
-  }
+  const x1 = sourcePortPos.x
+  const y1 = sourcePortPos.y
+  const x2 = targetPortPos.x
+  const y2 = targetPortPos.y
 
   // 贝塞尔曲线控制点
   const distance = Math.abs(x2 - x1)
@@ -556,34 +556,14 @@ const getConnectionMidpoint = (connection) => {
   const sourceParamIndex = connection.sourceParamIndex ?? 0
   const targetParamIndex = connection.targetParamIndex ?? 0
 
-  // 尝试使用 DOM 获取端口实际位置
-  const sourcePortPos = getPortDomPosition(sourceNode.id, sourceParamIndex, 'output', sourceNode.type)
-  const targetPortPos = getPortDomPosition(targetNode.id, targetParamIndex, 'input', targetNode.type)
+  // 直接从节点数据计算端口位置（避免 DOM 测量的时序问题）
+  const sourcePortPos = getPortPosition(sourceNode, sourceParamIndex, 'output')
+  const targetPortPos = getPortPosition(targetNode, targetParamIndex, 'input')
 
-  let x1, y1, x2, y2
-
-  if (sourcePortPos && targetPortPos) {
-    x1 = sourcePortPos.x
-    y1 = sourcePortPos.y
-    x2 = targetPortPos.x
-    y2 = targetPortPos.y
-  } else {
-    // 回退到计算位置
-    const nodeWidth = 220
-    // 计算起点：开始节点使用添加按钮位置（right: -6px, width: 12px, center: 0）
-    if (sourceNode.type === 'start') {
-      x1 = sourceNode.x + nodeWidth
-      const params = getNodeOutputParams(sourceNode)
-      const paramsHeight = params.length > 0 ? 32 : 0
-      const nodeHeight = 40 + paramsHeight
-      y1 = sourceNode.y + nodeHeight / 2
-    } else {
-      y1 = getNodeParamPortPosition(sourceNode, sourceParamIndex, 'output')
-      x1 = sourceNode.x + nodeWidth
-    }
-    y2 = getNodeParamPortPosition(targetNode, targetParamIndex, 'input')
-    x2 = targetNode.x
-  }
+  const x1 = sourcePortPos.x
+  const y1 = sourcePortPos.y
+  const x2 = targetPortPos.x
+  const y2 = targetPortPos.y
 
   // 贝塞尔曲线在 t=0.5 时的点
   const distance = Math.abs(x2 - x1)
@@ -626,34 +606,14 @@ const getConnectionPathPart = (connection, part) => {
   const sourceParamIndex = connection.sourceParamIndex ?? 0
   const targetParamIndex = connection.targetParamIndex ?? 0
 
-  // 尝试使用 DOM 获取端口实际位置
-  const sourcePortPos = getPortDomPosition(sourceNode.id, sourceParamIndex, 'output', sourceNode.type)
-  const targetPortPos = getPortDomPosition(targetNode.id, targetParamIndex, 'input', targetNode.type)
+  // 直接从节点数据计算端口位置（避免 DOM 测量的时序问题）
+  const sourcePortPos = getPortPosition(sourceNode, sourceParamIndex, 'output')
+  const targetPortPos = getPortPosition(targetNode, targetParamIndex, 'input')
 
-  let x1, y1, x2, y2
-
-  if (sourcePortPos && targetPortPos) {
-    x1 = sourcePortPos.x
-    y1 = sourcePortPos.y
-    x2 = targetPortPos.x
-    y2 = targetPortPos.y
-  } else {
-    // 回退到计算位置
-    const nodeWidth = 220
-    // 计算起点：开始节点使用添加按钮位置（right: -6px, width: 12px, center: 0）
-    if (sourceNode.type === 'start') {
-      x1 = sourceNode.x + nodeWidth
-      const params = getNodeOutputParams(sourceNode)
-      const paramsHeight = params.length > 0 ? 32 : 0
-      const nodeHeight = 40 + paramsHeight
-      y1 = sourceNode.y + nodeHeight / 2
-    } else {
-      y1 = getNodeParamPortPosition(sourceNode, sourceParamIndex, 'output')
-      x1 = sourceNode.x + nodeWidth
-    }
-    y2 = getNodeParamPortPosition(targetNode, targetParamIndex, 'input')
-    x2 = targetNode.x
-  }
+  const x1 = sourcePortPos.x
+  const y1 = sourcePortPos.y
+  const x2 = targetPortPos.x
+  const y2 = targetPortPos.y
 
   // 贝塞尔曲线控制点
   const distance = Math.abs(x2 - x1)
@@ -820,11 +780,91 @@ const zoomIn = () => {
 }
 
 const zoomOut = () => {
-  canvas.scale = Math.max(0.5, canvas.scale - 0.1)
+  canvas.scale = Math.max(0.25, canvas.scale - 0.1)
 }
 
 const resetZoom = () => {
   canvas.scale = 1
+  canvas.offsetX = 0
+  canvas.offsetY = 0
+}
+
+// 处理缩放输入变化
+const handleZoomInputChange = (value) => {
+  const newScale = value / 100
+  canvas.scale = Math.min(Math.max(newScale, 0.25), 2)
+}
+
+// 适应内容（重置视图）
+const handleFitContent = () => {
+  resetZoom()
+}
+
+// 处理滚轮缩放（以鼠标位置为中心）
+const handleWheel = (event) => {
+  const delta = event.deltaY > 0 ? -0.1 : 0.1
+  const newScale = Math.min(Math.max(canvas.scale + delta, 0.25), 2)
+
+  if (newScale === canvas.scale) return
+
+  // 获取鼠标在容器中的位置
+  const rect = canvasContainerRef.value?.getBoundingClientRect()
+  if (!rect) return
+
+  const mouseX = event.clientX - rect.left
+  const mouseY = event.clientY - rect.top
+
+  // 计算鼠标在画布上的位置
+  const canvasMouseX = (mouseX - canvas.offsetX) / canvas.scale
+  const canvasMouseY = (mouseY - canvas.offsetY) / canvas.scale
+
+  // 更新缩放
+  canvas.scale = newScale
+
+  // 调整偏移量，使鼠标位置保持不变
+  canvas.offsetX = mouseX - canvasMouseX * newScale
+  canvas.offsetY = mouseY - canvasMouseY * newScale
+}
+
+// 键盘事件处理
+const handleKeyDown = (event) => {
+  // 忽略输入框内的快捷键
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+    return
+  }
+
+  // 空格键：进入平移模式
+  if (event.code === 'Space' && !spaceKeyPressed.value) {
+    event.preventDefault()
+    spaceKeyPressed.value = true
+    if (canvasContainerRef.value) {
+      canvasContainerRef.value.style.cursor = 'grab'
+    }
+  }
+
+  // Ctrl/Cmd 快捷键
+  if (event.ctrlKey || event.metaKey) {
+    if (event.key === '=' || event.key === '+') {
+      event.preventDefault()
+      zoomIn()
+    } else if (event.key === '-') {
+      event.preventDefault()
+      zoomOut()
+    } else if (event.key === '0') {
+      event.preventDefault()
+      resetZoom()
+    }
+  }
+}
+
+// 键盘松开事件处理
+const handleKeyUp = (event) => {
+  if (event.code === 'Space') {
+    spaceKeyPressed.value = false
+    if (canvasContainerRef.value && !canvasDragState.isDragging) {
+      canvasContainerRef.value.style.cursor = ''
+    }
+  }
 }
 
 // 返回列表
@@ -3015,21 +3055,10 @@ const handleActionBtnDown = (node, event) => {
   // 立即禁用文本选择，防止长按检测期间文字被选中
   document.body.style.userSelect = 'none'
 
-  // 获取按钮的实际 DOM 位置，确保连线起点与按钮中心一致
-  const btnPosition = getActionBtnDomPosition(node.id)
-  let x, y
-  if (btnPosition) {
-    x = btnPosition.x
-    y = btnPosition.y
-  } else {
-    // 降级方案：使用估算值（与按钮 CSS 一致）
-    const nodeWidth = 220
-    const params = getNodeOutputParams(node)
-    const paramsHeight = params.length > 0 ? 32 : 0
-    const nodeHeight = 40 + paramsHeight
-    x = node.x + nodeWidth
-    y = node.y + nodeHeight / 2
-  }
+  // 直接从节点数据计算位置（避免 DOM 测量的时序问题）
+  const portPos = getPortPosition(node, 0, 'output')
+  const x = portPos.x
+  const y = portPos.y
 
   longPressState.isLongPress = false
   longPressState.startTime = Date.now()
@@ -3443,6 +3472,25 @@ const handleLoopBodyNodeSelect = (node) => {
 
 // 开始拖拽画布
 const startDragCanvas = (event) => {
+  // 空格键模式下，任何位置都可以拖拽
+  if (spaceKeyPressed.value) {
+    event.preventDefault()
+    canvasDragState.isDragging = true
+    canvasDragState.startX = event.clientX
+    canvasDragState.startY = event.clientY
+    canvasDragState.startOffsetX = canvas.offsetX
+    canvasDragState.startOffsetY = canvas.offsetY
+
+    document.addEventListener('mousemove', onDragCanvas)
+    document.addEventListener('mouseup', stopDragCanvas)
+
+    document.body.style.userSelect = 'none'
+    if (canvasContainerRef.value) {
+      canvasContainerRef.value.style.cursor = 'grabbing'
+    }
+    return
+  }
+
   // 只有点击在空白处才触发画布拖拽
   if (event.target.closest('.flow-node, .connection-path, .connection-add-btn, .node-action-btn')) {
     return
@@ -3480,6 +3528,11 @@ const stopDragCanvas = () => {
 
   // 恢复文本选择
   document.body.style.userSelect = ''
+
+  // 恢复光标
+  if (canvasContainerRef.value) {
+    canvasContainerRef.value.style.cursor = spaceKeyPressed.value ? 'grab' : ''
+  }
 }
 
 // 开始绘制连线
@@ -3716,9 +3769,40 @@ const getNodeParamPortPosition = (node, paramIndex, type) => {
 
 // 键盘事件处理
 const handleKeydown = (event) => {
+  // 忽略输入框内的快捷键
+  if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+    return
+  }
+
+  // Escape 键：取消选择和连线
   if (event.key === 'Escape') {
     deselectAll()
     drawingConnection.value = null
+    return
+  }
+
+  // 空格键：进入平移模式
+  if (event.code === 'Space' && !spaceKeyPressed.value) {
+    event.preventDefault()
+    spaceKeyPressed.value = true
+    if (canvasContainerRef.value) {
+      canvasContainerRef.value.style.cursor = 'grab'
+    }
+    return
+  }
+
+  // Ctrl/Cmd 快捷键
+  if (event.ctrlKey || event.metaKey) {
+    if (event.key === '=' || event.key === '+') {
+      event.preventDefault()
+      zoomIn()
+    } else if (event.key === '-') {
+      event.preventDefault()
+      zoomOut()
+    } else if (event.key === '0') {
+      event.preventDefault()
+      resetZoom()
+    }
   }
 }
 
@@ -3855,6 +3939,7 @@ const loadWorkflowData = async () => {
 
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
+  document.addEventListener('keyup', handleKeyUp)
 
   // 加载变量类型数据
   variableTypeStore.loadVariableTypes()
@@ -4329,6 +4414,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('keyup', handleKeyUp)
   document.removeEventListener('mousemove', onDragAiChat)
   document.removeEventListener('mouseup', stopDragAiChat)
 })
@@ -4345,9 +4431,27 @@ onUnmounted(() => {
       </div>
       <div class="toolbar-divider"></div>
       <div class="zoom-controls">
-        <el-button text :icon="ZoomOut" @click="zoomOut" title="缩小" />
-        <span class="zoom-value">{{ Math.round(canvas.scale * 100) }}%</span>
-        <el-button text :icon="ZoomIn" @click="zoomIn" title="放大" />
+        <el-button text :icon="ZoomOut" @click="zoomOut" title="缩小 (Ctrl+-)" />
+        <el-popover
+          v-model:visible="showZoomInput"
+          placement="bottom"
+          :width="140"
+          trigger="click"
+        >
+          <el-input-number
+            v-model="inputZoom"
+            :min="25"
+            :max="200"
+            :step="10"
+            size="small"
+            @change="handleZoomInputChange"
+          />
+          <template #reference>
+            <span class="zoom-value">{{ Math.round(canvas.scale * 100) }}%</span>
+          </template>
+        </el-popover>
+        <el-button text :icon="ZoomIn" @click="zoomIn" title="放大 (Ctrl+=)" />
+        <el-button text :icon="FullScreen" @click="handleFitContent" title="适应内容" />
       </div>
       <div class="toolbar-divider"></div>
       <el-button text :icon="Grid" @click="autoLayoutNodes">调整布局</el-button>
@@ -4364,7 +4468,7 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-content">
-      <div ref="canvasContainerRef" class="canvas-container" :class="{ dragging: canvasDragState.isDragging, 'drawing-connection': drawingConnection }" @click="handleCanvasClick" @mousedown="startDragCanvas">
+      <div ref="canvasContainerRef" class="canvas-container" :class="{ dragging: canvasDragState.isDragging, 'drawing-connection': drawingConnection }" @click="handleCanvasClick" @mousedown="startDragCanvas" @wheel.prevent="handleWheel">
         <div
           ref="canvasRef"
           class="canvas"
@@ -4418,7 +4522,7 @@ onUnmounted(() => {
             <!-- 已有连线（起点部分） -->
             <path
               v-for="conn in connections"
-              :key="conn.id + '-start'"
+              :key="conn.id + '-start-' + canvas.scale"
               :d="getConnectionPathPart(conn, 'start')"
               class="connection-path"
               :class="{
@@ -4462,6 +4566,7 @@ onUnmounted(() => {
             v-for="node in nodes"
             :key="node.id"
             :data-node-id="node.id"
+            :data-node-type="node.type"
             class="flow-node"
             :class="{ selected: selectedNode?.id === node.id }"
             :style="{ left: `${node.x}px`, top: `${node.y}px` }"
@@ -4710,7 +4815,7 @@ onUnmounted(() => {
             <!-- 已有连线（终点部分）- 直接在此路径上添加 marker-end -->
             <path
               v-for="conn in connections"
-              :key="conn.id + '-end'"
+              :key="conn.id + '-end-' + canvas.scale"
               :d="getConnectionPathPart(conn, 'end')"
               class="connection-path"
               :class="{
