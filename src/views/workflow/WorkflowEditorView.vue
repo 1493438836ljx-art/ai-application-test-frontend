@@ -1023,9 +1023,9 @@ const saveWorkflow = async () => {
     const connectionsData = connections.value.map((conn) => ({
       connectionUuid: conn.id,
       sourceNodeUuid: conn.sourceId,  // 前端节点 UUID
-      sourcePortId: conn.sourcePort,
+      sourcePortId: conn.sourcePort || '',  // 确保有默认值
       targetNodeUuid: conn.targetId,  // 前端节点 UUID
-      targetPortId: conn.targetPort,
+      targetPortId: conn.targetPort || '',  // 确保有默认值
       sourceParamIndex: conn.sourceParamIndex || null,
       targetParamIndex: conn.targetParamIndex || null,
       label: conn.label || null,
@@ -1033,10 +1033,12 @@ const saveWorkflow = async () => {
 
     // 构建关联数据（循环节点与循环体画布的关联）
     const associationsData = associations.value.map((assoc) => ({
-      loopNodeUuid: assoc.sourceId,  // 循环节点的前端 UUID
+      containerNodeUuid: assoc.sourceId,  // 循环节点的前端 UUID
       bodyNodeUuid: assoc.targetId,  // 循环体画布的前端 UUID
-      associationType: assoc.associationType || 'LOOP',
+      associationType: assoc.associationType || 'LOOP_BODY',
     }))
+
+    // console.log('保存时关联数据:', associationsData)
 
     const saveData = {
       nodes: nodesData,
@@ -3642,8 +3644,14 @@ const stopDragLoopBodyCanvas = () => {
   document.body.style.userSelect = ''
 }
 
-// 处理循环体内节点选中
+// 处理循环体内节点选中（单击只选中，不打开配置面板）
 const handleLoopBodyNodeSelect = (node) => {
+  // 只选中节点，不打开配置面板
+  // 循环体内的节点选中状态由 LoopBodyCanvas 组件内部管理
+}
+
+// 处理循环体内节点双击（打开配置面板）
+const handleLoopBodyNodeDblClick = (node) => {
   selectedNode.value = node
 }
 
@@ -3781,12 +3789,18 @@ const stopConnection = (event) => {
         const targetNode = nodes.value.find((n) => n.id === targetNodeId)
 
         if (targetNode && targetNode.id !== sourceNode.id) {
+          // 获取端口信息
+          const sourcePort = sourceNode.outputs?.[0]
+          const targetPort = targetNode.inputs?.[0]
+
           // 创建连线
           const newConnection = {
             id: `conn-${Date.now()}`,
             sourceId: sourceNode.id,
+            sourcePort: sourcePort?.id || `out-0`,
             sourceParamIndex: 0,
             targetId: targetNode.id,
+            targetPort: targetPort?.id || `in-0`,
             targetParamIndex: 0,
           }
 
@@ -3865,8 +3879,10 @@ const endConnection = (targetNode, targetParam, paramIndex, event) => {
   const newConnection = {
     id: `conn-${Date.now()}`,
     sourceId: sourceNode.id,
+    sourcePort: sourceParam?.id || `out-${sourceParamIndex}`,
     sourceParamIndex: sourceParamIndex,
     targetId: targetNode.id,
+    targetPort: targetParam?.id || `in-${paramIndex}`,
     targetParamIndex: paramIndex,
   }
 
@@ -4012,6 +4028,8 @@ const loadWorkflowData = async () => {
 
   try {
     const response = await getWorkflowDetail(route.params.id)
+    console.log('工作流详情响应:', response)
+    // console.log('关联数据:', response?.associations)
 
     if (response) {
       // 更新工作流基本信息
@@ -4107,11 +4125,12 @@ const loadWorkflowData = async () => {
         if (response.associations && Array.isArray(response.associations)) {
           associations.value = response.associations.map((assoc, index) => ({
             id: `assoc-${index}`,
-            sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
-            targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+            sourceId: nodeIdMap[assoc.containerNodeUuid] || assoc.containerNodeUuid,
+            targetId: nodeIdMap[assoc.bodyNodeUuid] || assoc.bodyNodeUuid,
             associationType: assoc.associationType,
             config: {}
           }))
+          // console.log('关联数据已加载:', associations.value)
         }
       }
     }
@@ -4444,8 +4463,8 @@ onMounted(async () => {
         if (response.associations && Array.isArray(response.associations)) {
           defaultAssociations = response.associations.map((assoc, index) => ({
             id: `assoc-${index}`,
-            sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
-            targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+            sourceId: nodeIdMap[assoc.containerNodeUuid] || assoc.containerNodeUuid,
+            targetId: nodeIdMap[assoc.bodyNodeUuid] || assoc.bodyNodeUuid,
             associationType: assoc.associationType,
             config: {}
           }))
@@ -4584,14 +4603,41 @@ onMounted(async () => {
           }
 
           // 映射后端返回的关联数据到前端格式
-          if (response.associations && Array.isArray(response.associations)) {
+          if (response.associations && Array.isArray(response.associations) && response.associations.length > 0) {
             associations.value = response.associations.map((assoc, index) => ({
               id: `assoc-${index}`,
-              sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
-              targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+              sourceId: nodeIdMap[assoc.containerNodeUuid] || assoc.containerNodeUuid,
+              targetId: nodeIdMap[assoc.bodyNodeUuid] || assoc.bodyNodeUuid,
               associationType: assoc.associationType,
               config: {}
             }))
+            // console.log('关联数据已加载 (onMounted):', associations.value)
+            // console.log('nodeIdMap:', nodeIdMap)
+            // console.log('原始 associations:', response.associations)
+          } else {
+            // 如果后端没有返回关联数据，根据节点自动创建关联
+            // console.log('没有关联数据，自动创建关联')
+            const loopNodes = nodes.value.filter(n => n.type === 'loop')
+            const loopBodyNodes = nodes.value.filter(n => n.type === 'loopBodyCanvas')
+
+            loopNodes.forEach(loopNode => {
+              // 查找对应的循环体（通过 belongsTo 属性或 ID 匹配）
+              const loopBodyNode = loopBodyNodes.find(body =>
+                body.belongsTo === loopNode.id ||
+                body.id === `loopBody-${loopNode.id}`
+              )
+
+              if (loopBodyNode) {
+                associations.value.push({
+                  id: `assoc-${Date.now()}-${loopNode.id}`,
+                  sourceId: loopNode.id,
+                  targetId: loopBodyNode.id,
+                  associationType: 'LOOP_BODY',
+                  config: {}
+                })
+                // console.log('自动创建关联:', loopNode.id, '->', loopBodyNode.id)
+              }
+            })
           }
         }
       }
@@ -4976,6 +5022,7 @@ onUnmounted(() => {
             :node-types="nodeTypes"
             @canvas-drag-start="startDragLoopBodyCanvas($event, loopBodyNode)"
             @node-select="handleLoopBodyNodeSelect"
+            @node-dblclick="handleLoopBodyNodeDblClick"
           />
 
           <!-- 连线层（终点部分 - 在节点上层） -->

@@ -10,6 +10,7 @@
     :data-body-node-id="isInsideLoopBody ? node.id : undefined"
     @mousedown="handleMouseDown"
     @click.stop="handleClick"
+    @dblclick.stop="handleDblClick"
     @contextmenu="handleContextMenu"
   >
     <!-- 节点内容 -->
@@ -193,6 +194,7 @@ const props = defineProps({
 const emit = defineEmits([
   'node-mousedown',
   'node-click',
+  'node-dblclick',
   'node-contextmenu',
   'output-port-mousedown',
   'output-port-mouseup',
@@ -258,6 +260,10 @@ const handleClick = (event) => {
   // 支持 Ctrl/Cmd + 点击进行多选
   const multiSelect = event.ctrlKey || event.metaKey
   emit('node-click', { event, node: props.node, multiSelect })
+}
+
+const handleDblClick = (event) => {
+  emit('node-dblclick', { event, node: props.node })
 }
 
 const handleContextMenu = (event) => {

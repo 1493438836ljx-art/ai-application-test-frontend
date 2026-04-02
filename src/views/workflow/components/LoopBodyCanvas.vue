@@ -21,7 +21,7 @@
       :is-left="true"
       :simplified="true"
       @port-drag-start="handlePortDragStart"
-      @port-click="(port) => showAddNodeDialog(port, 'left')"
+      @port-click="(port, event) => showAddNodeDialog(port, 'left', event)"
     />
 
     <!-- 右侧端口（简化模式） -->
@@ -30,7 +30,7 @@
       :is-left="false"
       :simplified="true"
       @port-drag-start="handlePortDragStart"
-      @port-click="(port) => showAddNodeDialog(port, 'right')"
+      @port-click="(port, event) => showAddNodeDialog(port, 'right', event)"
     />
 
     <!-- 子画布区域 -->
@@ -53,7 +53,10 @@
         :node-types="nodeTypes"
         @node-mousedown="({ event, node }) => startDragBodyNode(event, node)"
         @node-click="({ node, multiSelect }) => selectBodyNode(node, multiSelect)"
+        @node-dblclick="({ node }) => emit('node-dblclick', node)"
+        @node-contextmenu="({ event, node }) => showBodyContextMenu(event, node)"
         @output-port-mousedown="({ event, node }) => startBodyConnection(event, node, 'output', 0)"
+        @output-port-mouseup="({ event, node }) => handleOutputPortMouseUp(event, node)"
       />
 
       <!-- 循环体内连线 SVG -->
@@ -124,28 +127,75 @@
     </div>
   </div>
 
-  <!-- 添加节点对话框 -->
-  <el-dialog v-model="showAddDialog" title="添加循环体节点" width="400px" append-to-body>
-    <div class="node-type-list">
-      <div
-        v-for="type in availableNodeTypes"
-        :key="type.type"
-        class="node-type-item"
-        @click="addSelectedNodeType(type)"
-      >
-        <el-icon :style="{ color: type.color }">
-          <component :is="type.icon" />
-        </el-icon>
-        <span>{{ type.name }}</span>
-      </div>
+  <!-- 添加节点弹窗 -->
+  <div
+    v-if="showAddDialog"
+    class="add-node-popover"
+    :style="{ left: `${addPopoverPosition.x}px`, top: `${addPopoverPosition.y}px` }"
+  >
+    <div class="popover-header">
+      <span>选择节点类型</span>
+      <el-icon class="close-icon" @click="closeAddDialog"><Close /></el-icon>
     </div>
-  </el-dialog>
+    <div class="popover-content">
+      <template v-for="category in nodeCategories" :key="category.key">
+        <div
+          v-if="availableNodeTypes.filter((n) => n.category === category.key).length > 0"
+          class="category-section"
+        >
+          <div class="category-title">{{ category.name }}</div>
+          <div class="category-items">
+            <div
+              v-for="nodeType in availableNodeTypes.filter((n) => n.category === category.key)"
+              :key="nodeType.type"
+              class="popover-node-item"
+              @click="addSelectedNodeType(nodeType)"
+            >
+              <div
+                class="popover-node-icon"
+                :style="{ background: `${nodeType.color}15`, color: nodeType.color }"
+              >
+                <el-icon :size="16">
+                  <component :is="getIconComponent(nodeType.icon)" />
+                </el-icon>
+              </div>
+              <span class="popover-node-name">{{ nodeType.name }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- 弹窗遮罩 -->
+  <div v-if="showAddDialog" class="popover-overlay" @click="closeAddDialog" />
+
+  <!-- 右键菜单 -->
+  <div
+    v-if="bodyContextMenu.visible"
+    class="context-menu"
+    :style="{ left: `${bodyContextMenu.x}px`, top: `${bodyContextMenu.y}px` }"
+  >
+    <div class="context-menu-item" @click="bodyContextMenuRename">
+      <el-icon><Edit /></el-icon>
+      <span>重命名</span>
+    </div>
+    <div class="context-menu-item" @click="bodyContextMenuDuplicate">
+      <el-icon><CopyDocument /></el-icon>
+      <span>创建副本</span>
+    </div>
+    <div class="context-menu-divider" />
+    <div class="context-menu-item danger" @click="bodyContextMenuDelete">
+      <el-icon><Delete /></el-icon>
+      <span>删除</span>
+    </div>
+  </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Close, Edit, CopyDocument, Delete } from '@element-plus/icons-vue'
 import LoopBodyPort from './LoopBodyPort.vue'
 import FlowNode from './FlowNode.vue'
 import { useLoopBody } from '../composables/useLoopBody'
@@ -168,11 +218,13 @@ const props = defineProps({
 // 使用 useLoopBody composable（只传入一次 loopBodyNode）
 const { loopBodyCanvas, bodyNodes, bodyConnections, leftPort, rightPort, addBodyNode, deleteBodyNode, createBodyConnection, deleteBodyConnection, validateLoopBodyConnection, saveLoopBodyState, moveBodyNode, } = useLoopBody(props.loopBodyNode, props.loopNode)
 
-const emit = defineEmits(['update', 'node-select', 'connection-create', 'canvas-drag-start'])
+const emit = defineEmits(['update', 'node-select', 'connection-create', 'canvas-drag-start', 'node-dblclick'])
 
 const workspaceRef = ref(null)
 const selectedBodyNode = ref(null)
 const showAddDialog = ref(false)
+// popover 位置
+const addPopoverPosition = ref({ x: 0, y: 0 })
 // 记录触发添加节点的端口类型（leftPort 或 rightPort）
 const triggerPortType = ref(null)
 // 记录触发添加节点的连线（用于在连线中间插入节点）
@@ -185,10 +237,48 @@ let hoveredBodyConnectionTimer = null
 const tempBodyConnection = ref(null)
 const drawingBodyConnection = ref(null)
 
+// 右键菜单状态
+const bodyContextMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  node: null,
+})
+
+// 触发添加节点的源节点（点击节点输出端口时记录）
+const triggerSourceNode = ref(null)
+
 // 可用的节点类型（排除特殊类型）
 const availableNodeTypes = computed(() => {
   return props.nodeTypes.filter((t) => !['start', 'end', 'loop', 'loopBodyCanvas'].includes(t.type))
 })
+
+// 节点分类（用于分组显示）
+const nodeCategories = [
+  { key: 'BASIC', name: '基础节点' },
+  { key: 'LOGIC', name: '逻辑控制' },
+  { key: 'EXECUTION', name: '执行节点' },
+]
+
+// 根据类型获取图标组件
+const getIconComponent = (iconName) => {
+  const iconMap = {
+    'Connection': 'Connection',
+    'Setting': 'Setting',
+    'Document': 'Document',
+    'Grid': 'Grid',
+    'TrendCharts': 'TrendCharts',
+    'DataLine': 'DataLine',
+    'Cpu': 'Cpu',
+    'ChatDotRound': 'ChatDotRound',
+    'Collection': 'Collection',
+    'Refresh': 'Refresh',
+    'Timer': 'Timer',
+    'Files': 'Files',
+    'Folder': 'Folder',
+  }
+  return iconMap[iconName] || iconName
+}
 
 // 画布拖拽状态
 const canvasDragState = reactive({
@@ -431,6 +521,79 @@ const handlePortConnectionEnd = (event) => {
   document.removeEventListener('mouseup', handlePortConnectionEnd)
 }
 
+// 输出端口鼠标释放（点击添加节点）
+const handleOutputPortMouseUp = (event, node) => {
+  // 如果没有进行拖拽连线，则显示添加节点弹窗
+  if (!drawingBodyConnection.value || drawingBodyConnection.value.sourceId === node.id) {
+    // 显示添加节点弹窗
+    addPopoverPosition.value = { x: event.clientX, y: event.clientY }
+    triggerPortType.value = 'output'
+    triggerConnection.value = null
+    triggerSourceNode.value = node // 记录触发源节点
+    showAddDialog.value = true
+  }
+}
+
+// 显示右键菜单
+const showBodyContextMenu = (event, node) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  selectBodyNode(node)
+
+  bodyContextMenu.visible = true
+  bodyContextMenu.x = event.clientX
+  bodyContextMenu.y = event.clientY
+  bodyContextMenu.node = node
+
+  // 点击其他地方关闭菜单
+  document.addEventListener('click', hideBodyContextMenu, { once: true })
+}
+
+// 隐藏右键菜单
+const hideBodyContextMenu = () => {
+  bodyContextMenu.visible = false
+  bodyContextMenu.node = null
+}
+
+// 右键菜单：重命名
+const bodyContextMenuRename = () => {
+  if (!bodyContextMenu.node) return
+  hideBodyContextMenu()
+  // 触发节点双击事件打开配置面板
+  emit('node-dblclick', bodyContextMenu.node)
+}
+
+// 右键菜单：创建副本
+const bodyContextMenuDuplicate = () => {
+  if (!bodyContextMenu.node) return
+  const originalNode = bodyContextMenu.node
+  hideBodyContextMenu()
+
+  // 复制节点
+  const newNode = {
+    ...originalNode,
+    id: `body-node-${Date.now()}`,
+    name: `${originalNode.name} (副本)`,
+    x: originalNode.x + 30,
+    y: originalNode.y + 30,
+  }
+
+  addBodyNode(newNode)
+  ElMessage.success('已创建节点副本')
+}
+
+// 右键菜单：删除
+const bodyContextMenuDelete = () => {
+  if (!bodyContextMenu.node) return
+  const nodeName = bodyContextMenu.node.name
+  hideBodyContextMenu()
+
+  deleteBodyNode(bodyContextMenu.node.id)
+  selectedBodyNode.value = null
+  ElMessage.success(`已删除节点: ${nodeName}`)
+}
+
 // 获取循环体内部连线路径
 const getBodyConnectionPath = (connection) => {
   let sourceX, sourceY, targetX, targetY
@@ -517,7 +680,7 @@ const getBodyConnectionPath = (connection) => {
 }
 
 // 显示添加节点对话框
-const showAddNodeDialog = (port, portType) => {
+const showAddNodeDialog = (port, portType, event) => {
   triggerPortType.value = portType // 记录触发端口类型
   // 如果当前有悬浮的连线，记录下来（用于在连线中间插入节点）
   if (hoveredBodyConnection.value) {
@@ -525,7 +688,17 @@ const showAddNodeDialog = (port, portType) => {
   } else {
     triggerConnection.value = null
   }
+  // 设置 popover 位置
+  if (event) {
+    addPopoverPosition.value = { x: event.clientX, y: event.clientY }
+  }
   showAddDialog.value = true
+}
+
+// 关闭添加节点弹窗
+const closeAddDialog = () => {
+  showAddDialog.value = false
+  triggerConnection.value = null
 }
 
 // 延迟清除悬停状态
@@ -710,6 +883,24 @@ const addSelectedNodeType = (type) => {
       }
       triggerPortType.value = null // 重置触发端口类型
     }
+
+    // 从节点输出端口添加新节点时，自动连线
+    if (triggerPortType.value === 'output' && triggerSourceNode.value) {
+      // 从触发源节点连线到新节点
+      const result = createBodyConnection(
+        triggerSourceNode.value.id,
+        newNode.id,
+        'out-1',
+        'in-1',
+      )
+      if (!result.success) {
+        console.warn('Auto connect from source node failed:', result.error)
+      } else {
+        ElMessage.success('已自动连接节点')
+      }
+      triggerPortType.value = null
+      triggerSourceNode.value = null
+    }
   })
 }
 
@@ -855,5 +1046,169 @@ defineExpose({
 .node-type-item:hover {
   border-color: #3b82f6;
   background: #f0f7ff;
+}
+
+/* 添加节点弹窗样式（与主画布一致） */
+.add-node-popover {
+  position: fixed;
+  width: 380px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  transform: translate(10px, -50%);
+  animation: popover-in 0.2s ease;
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translate(0, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(10px, -50%) scale(1);
+  }
+}
+
+.popover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.close-icon {
+  cursor: pointer;
+  color: #9ca3af;
+  transition: color 0.2s;
+}
+
+.close-icon:hover {
+  color: #6366f1;
+}
+
+.popover-content {
+  padding: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.category-section {
+  margin-bottom: 12px;
+}
+
+.category-section:last-child {
+  margin-bottom: 0;
+}
+
+.category-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.category-items {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.popover-node-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.popover-node-item:hover {
+  background: #f3f4f6;
+}
+
+.popover-node-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.popover-node-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.popover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+}
+
+/* 右键菜单样式 */
+.context-menu {
+  position: fixed;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  min-width: 140px;
+  z-index: 3000;
+  animation: context-menu-in 0.15s ease;
+}
+
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #374151;
+  transition: background 0.15s;
+}
+
+.context-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.context-menu-item.danger {
+  color: #ef4444;
+}
+
+.context-menu-item.danger:hover {
+  background: #fef2f2;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 4px 0;
 }
 </style>

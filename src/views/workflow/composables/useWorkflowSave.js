@@ -287,8 +287,8 @@ export function useWorkflowSave(options = {}) {
           if (response.associations && Array.isArray(response.associations)) {
             associations.value = response.associations.map((assoc, index) => ({
               id: `assoc-${index}`,
-              sourceId: nodeIdMap[assoc.loopNodeId] || assoc.loopNodeId,
-              targetId: nodeIdMap[assoc.bodyNodeId] || assoc.bodyNodeId,
+              sourceId: nodeIdMap[assoc.containerNodeUuid] || assoc.containerNodeUuid,
+              targetId: nodeIdMap[assoc.bodyNodeUuid] || assoc.bodyNodeUuid,
               associationType: assoc.associationType,
               config: {}
             }))

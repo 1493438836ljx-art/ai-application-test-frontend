@@ -84,7 +84,7 @@ const handlePortMouseDown = (event) => {
     // 恢复文本选择
     document.body.style.userSelect = ''
     // 无论是点击还是拖拽，都触发 port-click 事件以弹出添加节点弹窗
-    emit('port-click', props.port)
+    emit('port-click', props.port, upEvent)
     emit('port-drag-end')
     document.removeEventListener('mouseup', handleMouseUp)
   }
