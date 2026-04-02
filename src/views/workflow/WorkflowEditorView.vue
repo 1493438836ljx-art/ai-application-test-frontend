@@ -42,6 +42,15 @@ import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
 import JsonTreeView from '@/components/workflow/JsonTreeView.vue'
 import { useAssociations } from './composables/useAssociations'
 import { useNodeParams, flattenJsonTree, getNodeOutputParams } from './composables/useNodeParams'
+// 新增 composables - 可用于渐进式重构
+// import { useAIChat } from './composables/useAIChat'
+// import { useWorkflowExecution } from './composables/useWorkflowExecution'
+// import { useClipboard } from './composables/useClipboard'
+// import { useWorkflowSave } from './composables/useWorkflowSave'
+// 新增 components - 可用于渐进式重构
+// import AIChatPanel from './components/AIChatPanel.vue'
+// import RunPanel from './components/RunPanel.vue'
+// import EditorToolbar from './components/EditorToolbar.vue'
 import { generateCopyName, getExistingNames } from './utils/nodeCopyName'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
@@ -1179,94 +1188,28 @@ const addNode = (type) => {
     }
 
     // 创建循环体画布节点
+    // 计算位置：循环体中心点横坐标与循环控制节点中心点一致
+    // 循环体中心点纵坐标 = 循环控制节点中心点纵坐标 + 0.75 × 循环体高度
+    const loopNodeWidth = 220
+    const loopNodeHeight = 70
+    const loopBodyWidth = 500
+    const loopBodyHeight = 400
+    const loopBodyX = newNode.x + (loopNodeWidth / 2) - (loopBodyWidth / 2)
+    const loopBodyY = newNode.y + (loopNodeHeight / 2) + 0.25 * loopBodyHeight
+
     const loopBodyCanvas = {
       id: `loopBody-${newNode.id}`,
       type: 'loopBodyCanvas',
       name: '循环体',
-      x: newNode.x,
-      y: newNode.y + 200,
-      width: 500,
-      height: 400,
+      x: loopBodyX,
+      y: loopBodyY,
+      width: loopBodyWidth,
+      height: loopBodyHeight,
       belongsTo: newNode.id,
       loopBody: {
         canvas: { scale: 1, offsetX: 0, offsetY: 0 },
-        nodes: [
-          {
-            id: `apiAuto-${Date.now()}`,
-            type: 'apiAuto',
-            name: 'HTTPS/HTTP接口调用',
-            x: 200,
-            y: 150,
-            inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
-            outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
-            inputParams: [
-              {
-                name: 'request_url',
-                type: 'String',
-                required: true,
-                value: '',
-                placeholder: '请输入请求URL',
-                elementType: 'string'
-              },
-              {
-                name: 'request_method',
-                type: 'String',
-                required: true,
-                value: 'GET',
-                placeholder: '请选择请求方法',
-                elementType: 'select',
-                options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-              },
-              {
-                name: 'request_headers',
-                type: 'Object',
-                required: false,
-                value: '{}',
-                placeholder: '请输入请求头JSON格式',
-                elementType: 'json'
-              },
-              {
-                name: 'request_body',
-                type: 'String',
-                required: false,
-                value: '',
-                placeholder: '请输入请求体',
-                elementType: 'textarea'
-              },
-              {
-                name: 'response_output',
-                type: 'String',
-                required: false,
-                value: 'response',
-                placeholder: '响应输出变量名',
-                elementType: 'string'
-              }
-            ],
-            outputParams: [
-              { name: 'response', type: 'String' },
-              { name: 'status', type: 'Number' }
-            ],
-            config: {}
-          }
-        ],
-        connections: [
-          {
-            id: `conn-loop-body-${Date.now()}-1`,
-            sourceId: 'port-left',
-            sourcePort: 'out',
-            targetId: `apiAuto-${Date.now()}`,
-            targetPort: 'in',
-            config: {}
-          },
-          {
-            id: `conn-loop-body-${Date.now()}-2`,
-            sourceId: `apiAuto-${Date.now()}`,
-            sourcePort: 'out',
-            targetId: 'port-right',
-            targetPort: 'in',
-            config: {}
-          }
-        ],
+        nodes: [],
+        connections: [],
         leftPort: {
           id: 'port-left',
           name: '输入',
@@ -1283,8 +1226,10 @@ const addNode = (type) => {
         },
       },
     }
+    // 先添加循环节点到数组
+    nodes.value.push(newNode)
+    // 再添加循环体画布节点
     nodes.value.push(loopBodyCanvas)
-
     // 创建关联线
     createAssociation(newNode.id, loopBodyCanvas.id)
   }
@@ -1308,8 +1253,16 @@ const addNode = (type) => {
     }
   }
 
-  nodes.value.push(newNode)
+  // 非循环节点在此添加
+  if (type !== 'loop') {
+    nodes.value.push(newNode)
+  }
+
   selectedNode.value = newNode
+
+  // 关闭添加节点弹窗
+  showAddNodePopover.value = null
+  insertConnection.value = null
 }
 
 // 重命名节点
@@ -3431,94 +3384,28 @@ const addConnectedNode = (type) => {
     }
 
     // 创建循环体画布节点
+    // 计算位置：循环体中心点横坐标与循环控制节点中心点一致
+    // 循环体中心点纵坐标 = 循环控制节点中心点纵坐标 + 0.75 × 循环体高度
+    const loopNodeWidth = 220
+    const loopNodeHeight = 70
+    const loopBodyWidth = 500
+    const loopBodyHeight = 400
+    const loopBodyX = newNode.x + (loopNodeWidth / 2) - (loopBodyWidth / 2)
+    const loopBodyY = newNode.y + (loopNodeHeight / 2) + 0.25 * loopBodyHeight
+
     const loopBodyCanvas = {
       id: `loopBody-${newNode.id}`,
       type: 'loopBodyCanvas',
       name: '循环体',
-      x: newNode.x,
-      y: newNode.y + 200,
-      width: 500,
-      height: 400,
+      x: loopBodyX,
+      y: loopBodyY,
+      width: loopBodyWidth,
+      height: loopBodyHeight,
       belongsTo: newNode.id,
       loopBody: {
         canvas: { scale: 1, offsetX: 0, offsetY: 0 },
-        nodes: [
-          {
-            id: `apiAuto-${Date.now()}`,
-            type: 'apiAuto',
-            name: 'HTTPS/HTTP接口调用',
-            x: 200,
-            y: 150,
-            inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
-            outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
-            inputParams: [
-              {
-                name: 'request_url',
-                type: 'String',
-                required: true,
-                value: '',
-                placeholder: '请输入请求URL',
-                elementType: 'string'
-              },
-              {
-                name: 'request_method',
-                type: 'String',
-                required: true,
-                value: 'GET',
-                placeholder: '请选择请求方法',
-                elementType: 'select',
-                options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-              },
-              {
-                name: 'request_headers',
-                type: 'Object',
-                required: false,
-                value: '{}',
-                placeholder: '请输入请求头JSON格式',
-                elementType: 'json'
-              },
-              {
-                name: 'request_body',
-                type: 'String',
-                required: false,
-                value: '',
-                placeholder: '请输入请求体',
-                elementType: 'textarea'
-              },
-              {
-                name: 'response_output',
-                type: 'String',
-                required: false,
-                value: 'response',
-                placeholder: '响应输出变量名',
-                elementType: 'string'
-              }
-            ],
-            outputParams: [
-              { name: 'response', type: 'String' },
-              { name: 'status', type: 'Number' }
-            ],
-            config: {}
-          }
-        ],
-        connections: [
-          {
-            id: `conn-loop-body-${Date.now()}-1`,
-            sourceId: 'port-left',
-            sourcePort: 'out',
-            targetId: `apiAuto-${Date.now()}`,
-            targetPort: 'in',
-            config: {}
-          },
-          {
-            id: `conn-loop-body-${Date.now()}-2`,
-            sourceId: `apiAuto-${Date.now()}`,
-            sourcePort: 'out',
-            targetId: 'port-right',
-            targetPort: 'in',
-            config: {}
-          }
-        ],
+        nodes: [],
+        connections: [],
         leftPort: {
           id: 'port-left',
           name: '输入',
@@ -3535,21 +3422,16 @@ const addConnectedNode = (type) => {
         },
       },
     }
+    // 先添加循环节点
+    nodes.value.push(newNode)
+    // 再添加循环体画布节点
     nodes.value.push(loopBodyCanvas)
-
     // 创建关联线
     createAssociation(newNode.id, loopBodyCanvas.id)
+  } else {
+    // 非循环节点在此添加
+    nodes.value.push(newNode)
   }
-
-
-
-  // 应用计算好的插入位置
-  newNode.x = insertX
-  newNode.y = insertY  // 纵坐标与源节点一致
-
-
-
-  nodes.value.push(newNode)
 
   // 如果是从连线中间插入
   if (insertConnection.value) {

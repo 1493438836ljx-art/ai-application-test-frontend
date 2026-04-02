@@ -209,6 +209,11 @@ const nodeDragState = reactive({
   offsetY: 0,
 })
 
+// 检查节点是否被选中
+const isBodyNodeSelected = (nodeId) => {
+  return selectedBodyNode.value?.id === nodeId
+}
+
 // 画布点击
 const handleCanvasClick = () => {
   selectedBodyNode.value = null
