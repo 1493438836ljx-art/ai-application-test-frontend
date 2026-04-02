@@ -4,6 +4,19 @@
  */
 import { ref, reactive, computed } from 'vue'
 
+// 循环体画布尺寸常量
+export const LOOP_BODY_DIMENSIONS = {
+  DEFAULT_WIDTH: 500,
+  DEFAULT_HEIGHT: 400,
+  MIN_WIDTH: 400,
+  MIN_HEIGHT: 300,
+  MAX_WIDTH: 1200,
+  MAX_HEIGHT: 800,
+  PADDING: 60,           // 内边距
+  NODE_WIDTH: 220,       // 节点宽度
+  NODE_HEIGHT: 70,       // 节点高度（估算值）
+}
+
 export function useLoopBody(loopBodyNode, loopNode) {
   // 循环体画布状态
   const loopBodyCanvas = reactive({
@@ -68,6 +81,8 @@ export function useLoopBody(loopBodyNode, loopNode) {
     bodyConnections.value = bodyConnections.value.filter(
       (c) => c.sourceId !== nodeId && c.targetId !== nodeId,
     )
+    // 收缩画布（如果需要）
+    shrinkCanvasIfNeeded()
     saveLoopBodyState()
   }
 
@@ -152,10 +167,80 @@ export function useLoopBody(loopBodyNode, loopNode) {
   // 移动循环体节点
   const moveBodyNode = (nodeId, newX, newY) => {
     const node = bodyNodes.value.find((n) => n.id === nodeId)
-    if (node) {
-      node.x = newX
-      node.y = newY
-      saveLoopBodyState()
+    if (!node) return
+
+    node.x = newX
+    node.y = newY
+
+    // 动态调整画布尺寸（扩展或收缩）
+    const bounds = calculateRequiredBounds()
+    const currentWidth = loopBodyNode?.width || LOOP_BODY_DIMENSIONS.DEFAULT_WIDTH
+    const currentHeight = loopBodyNode?.height || LOOP_BODY_DIMENSIONS.DEFAULT_HEIGHT
+
+    // 如果计算出的边界与当前尺寸不同，则更新画布尺寸
+    if (bounds.width !== currentWidth || bounds.height !== currentHeight) {
+      updateCanvasDimensions(bounds.width, bounds.height)
+    }
+
+    saveLoopBodyState()
+  }
+
+  /**
+   * 计算所需的画布尺寸（基于所有节点位置）
+   */
+  const calculateRequiredBounds = () => {
+    if (bodyNodes.value.length === 0) {
+      return {
+        width: LOOP_BODY_DIMENSIONS.DEFAULT_WIDTH,
+        height: LOOP_BODY_DIMENSIONS.DEFAULT_HEIGHT,
+      }
+    }
+
+    let maxRight = 0
+    let maxBottom = 0
+
+    bodyNodes.value.forEach((node) => {
+      const nodeRight = node.x + LOOP_BODY_DIMENSIONS.NODE_WIDTH
+      const nodeBottom = node.y + LOOP_BODY_DIMENSIONS.NODE_HEIGHT
+      if (nodeRight > maxRight) maxRight = nodeRight
+      if (nodeBottom > maxBottom) maxBottom = nodeBottom
+    })
+
+    return {
+      width: Math.max(LOOP_BODY_DIMENSIONS.MIN_WIDTH, maxRight + LOOP_BODY_DIMENSIONS.PADDING),
+      height: Math.max(LOOP_BODY_DIMENSIONS.MIN_HEIGHT, maxBottom + LOOP_BODY_DIMENSIONS.PADDING),
+    }
+  }
+
+  /**
+   * 更新画布尺寸（带边界限制）
+   */
+  const updateCanvasDimensions = (newWidth, newHeight) => {
+    const clampedWidth = Math.max(
+      LOOP_BODY_DIMENSIONS.MIN_WIDTH,
+      Math.min(LOOP_BODY_DIMENSIONS.MAX_WIDTH, newWidth),
+    )
+    const clampedHeight = Math.max(
+      LOOP_BODY_DIMENSIONS.MIN_HEIGHT,
+      Math.min(LOOP_BODY_DIMENSIONS.MAX_HEIGHT, newHeight),
+    )
+
+    if (loopBodyNode) {
+      loopBodyNode.width = clampedWidth
+      loopBodyNode.height = clampedHeight
+    }
+  }
+
+  /**
+   * 收缩画布（删除节点后重新计算）
+   */
+  const shrinkCanvasIfNeeded = () => {
+    const bounds = calculateRequiredBounds()
+    const currentWidth = loopBodyNode?.width || LOOP_BODY_DIMENSIONS.DEFAULT_WIDTH
+    const currentHeight = loopBodyNode?.height || LOOP_BODY_DIMENSIONS.DEFAULT_HEIGHT
+
+    if (bounds.width < currentWidth || bounds.height < currentHeight) {
+      updateCanvasDimensions(bounds.width, bounds.height)
     }
   }
 
@@ -172,5 +257,10 @@ export function useLoopBody(loopBodyNode, loopNode) {
     validateLoopBodyConnection,
     saveLoopBodyState,
     moveBodyNode,
+    // 新增导出
+    calculateRequiredBounds,
+    updateCanvasDimensions,
+    shrinkCanvasIfNeeded,
+    LOOP_BODY_DIMENSIONS,
   }
 }
