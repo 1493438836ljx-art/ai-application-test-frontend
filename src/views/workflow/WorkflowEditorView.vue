@@ -381,9 +381,50 @@ const getLoopBodyNodes = computed(() => {
   return nodes.value.filter((n) => n.type === 'loopBodyCanvas')
 })
 
+// 计算节点高度（用于端口位置计算和关联线计算）
+const calculateNodeHeight = (node) => {
+  const nodeWidth = 220
+
+  // 开始节点
+  if (node.type === 'start') {
+    const params = getNodeOutputParams(node)
+    const paramsHeight = params.length > 0 ? 32 : 0
+    return 56 + paramsHeight
+  }
+
+  // 结束节点
+  if (node.type === 'end') {
+    const inputParams = getNodeInputParams(node)
+    let nodeHeight = 56
+    if (inputParams.length > 0) {
+      nodeHeight += 45
+    }
+    return nodeHeight
+  }
+
+  // 普通节点
+  const inputParams = getNodeInputParams(node)
+  const outputParams = getNodeOutputParams(node)
+
+  // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
+  let nodeHeight = 56
+
+  // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
+  if (inputParams.length > 0) {
+    nodeHeight += 46
+  }
+
+  // 如果有输出参数，增加输出参数区域高度
+  if (outputParams.length > 0) {
+    nodeHeight += 46
+  }
+
+  return nodeHeight
+}
+
 // 使用 useAssociations composable
 const { getAssociationPath, createAssociation, deleteAssociation, getLoopBodyIdByLoopId } =
-  useAssociations(associations, nodes, getLoopBodyNodes)
+  useAssociations(associations, nodes, getLoopBodyNodes, calculateNodeHeight)
 
 // 使用 useNodeParams composable 获取节点参数函数
 const { formatParamType, getNodeInputParams } = useNodeParams()
@@ -460,47 +501,6 @@ const canvasDragState = reactive({
   startOffsetX: 0,
   startOffsetY: 0,
 })
-
-// 计算节点高度（用于端口位置计算）
-const calculateNodeHeight = (node) => {
-  const nodeWidth = 220
-
-  // 开始节点
-  if (node.type === 'start') {
-    const params = getNodeOutputParams(node)
-    const paramsHeight = params.length > 0 ? 32 : 0
-    return 56 + paramsHeight
-  }
-
-  // 结束节点
-  if (node.type === 'end') {
-    const inputParams = getNodeInputParams(node)
-    let nodeHeight = 56
-    if (inputParams.length > 0) {
-      nodeHeight += 45
-    }
-    return nodeHeight
-  }
-
-  // 普通节点
-  const inputParams = getNodeInputParams(node)
-  const outputParams = getNodeOutputParams(node)
-
-  // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
-  let nodeHeight = 56
-
-  // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
-  if (inputParams.length > 0) {
-    nodeHeight += 46
-  }
-
-  // 如果有输出参数，增加输出参数区域高度
-  if (outputParams.length > 0) {
-    nodeHeight += 46
-  }
-
-  return nodeHeight
-}
 
 // 直接从节点数据计算端口位置（不依赖 DOM 测量，避免缩放时的时序问题）
 const getPortPosition = (node, paramIndex, type) => {
@@ -1270,6 +1270,7 @@ const addNode = (type) => {
 // 重命名节点
 const renameDialogVisible = ref(false)
 const newNodeName = ref('')
+const renamingNode = ref(null)  // 保存正在重命名的节点引用
 const isEditingNodeName = ref(false)
 const editingNodeName = ref('')
 
@@ -1699,12 +1700,20 @@ const hideContextMenu = () => {
 
 // 右键菜单操作：重命名
 const contextMenuRename = () => {
+  // 从右键菜单保存的节点获取选中的节点
+  if (contextMenu.node) {
+    selectedNode.value = contextMenu.node
+  }
   hideContextMenu()
   showRenameDialog()
 }
 
 // 右键菜单操作：创建副本
 const contextMenuDuplicate = () => {
+  // 从右键菜单保存的节点获取选中的节点
+  if (contextMenu.node) {
+    selectedNode.value = contextMenu.node
+  }
   hideContextMenu()
   duplicateNode()
 }
@@ -1860,14 +1869,18 @@ const autoLayoutNodes = async () => {
 
 const showRenameDialog = () => {
   if (!selectedNode.value) return
+  // 保存节点引用到专用变量，避免被其他操作清除
+  renamingNode.value = selectedNode.value
   newNodeName.value = selectedNode.value.name
   renameDialogVisible.value = true
 }
 
 const confirmRename = () => {
-  if (!selectedNode.value || !newNodeName.value.trim()) return
-  selectedNode.value.name = newNodeName.value.trim()
+  const name = newNodeName.value?.trim() || ''
+  if (!renamingNode.value || !name) return
+  renamingNode.value.name = name
   renameDialogVisible.value = false
+  renamingNode.value = null  // 清除引用
   ElMessage.success('重命名成功')
 }
 
@@ -1907,10 +1920,11 @@ const duplicateNode = () => {
   if (!selectedNode.value) return
 
   const originalNode = selectedNode.value
+  const existingNames = getExistingNames(nodes.value)
   const newNode = {
     ...JSON.parse(JSON.stringify(originalNode)),
     id: `${originalNode.type}-${Date.now()}`,
-    name: `${originalNode.name} (副本)`,
+    name: generateCopyName(originalNode.name, existingNames),
     x: originalNode.x + 50,
     y: originalNode.y + 50,
   }

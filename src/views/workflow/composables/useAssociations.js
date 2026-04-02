@@ -4,7 +4,7 @@
  */
 import { computed } from 'vue'
 
-export function useAssociations(associations, nodes, getLoopBodyNodes) {
+export function useAssociations(associations, nodes, getLoopBodyNodes, getNodeHeight) {
   // 计算关联线路径（虚线）
   const getAssociationPath = (association) => {
     const sourceNode = nodes.value.find((n) => n.id === association.sourceId)
@@ -12,25 +12,14 @@ export function useAssociations(associations, nodes, getLoopBodyNodes) {
 
     if (!sourceNode || !targetNode) return ''
 
-    // 起点：循环节点底部正中间（使用 DOM 获取实际位置）
-    const nodeElement = document.querySelector(`[data-node-id="${sourceNode.id}"]`)
-    const canvasElement = document.querySelector('.canvas')
-
+    // 起点：循环节点底部正中间（使用数据坐标，避免缩放问题）
+    const nodeWidth = 220
+    // 使用传入的 getNodeHeight 函数计算节点实际高度
+    const nodeHeight = getNodeHeight ? getNodeHeight(sourceNode) : 70
     let x1, y1, x2, y2
 
-    if (nodeElement && canvasElement) {
-      const nodeRect = nodeElement.getBoundingClientRect()
-      const canvasRect = canvasElement.getBoundingClientRect()
-
-      // 计算相对于画布的起点位置（节点底部正中间）
-      x1 = nodeRect.left - canvasRect.left + nodeRect.width / 2
-      y1 = nodeRect.bottom - canvasRect.top
-    } else {
-      // 回退计算
-      const nodeWidth = 220
-      x1 = sourceNode.x + nodeWidth / 2
-      y1 = sourceNode.y + 70 // 估算的节点底部
-    }
+    x1 = sourceNode.x + nodeWidth / 2
+    y1 = sourceNode.y + nodeHeight
 
     // 终点：循环体顶部正中间
     const canvasWidth = targetNode.width || 500
