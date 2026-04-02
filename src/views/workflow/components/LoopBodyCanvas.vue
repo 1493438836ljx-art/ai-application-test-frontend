@@ -587,9 +587,10 @@ const bodyContextMenuDuplicate = () => {
 const bodyContextMenuDelete = () => {
   if (!bodyContextMenu.node) return
   const nodeName = bodyContextMenu.node.name
+  const nodeId = bodyContextMenu.node.id  // 先保存节点 ID
   hideBodyContextMenu()
 
-  deleteBodyNode(bodyContextMenu.node.id)
+  deleteBodyNode(nodeId)  // 使用保存的 ID
   selectedBodyNode.value = null
   ElMessage.success(`已删除节点: ${nodeName}`)
 }

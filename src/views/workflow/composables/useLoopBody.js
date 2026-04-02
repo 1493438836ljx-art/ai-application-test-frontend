@@ -12,7 +12,8 @@ export const LOOP_BODY_DIMENSIONS = {
   MIN_HEIGHT: 300,
   MAX_WIDTH: 1200,
   MAX_HEIGHT: 800,
-  PADDING: 60,           // 内边距
+  PADDING: 105,          // 内边距（1.5倍节点高度)（节点与画布边缘的最小距离）
+  HEADER_HEIGHT: 30,     // 标题栏高度
   NODE_WIDTH: 220,       // 节点宽度
   NODE_HEIGHT: 70,       // 节点高度（估算值）
 }
@@ -69,6 +70,18 @@ export function useLoopBody(loopBodyNode, loopNode) {
     console.log('Adding body node:', newNode)
     bodyNodes.value.push(newNode)
     console.log('Body nodes after push:', bodyNodes.value)
+
+    // 添加节点后检查是否需要扩展画布
+    const bounds = calculateRequiredBounds()
+    const currentWidth = loopBodyNode?.width || LOOP_BODY_DIMENSIONS.DEFAULT_WIDTH
+    const currentHeight = loopBodyNode?.height || LOOP_BODY_DIMENSIONS.DEFAULT_HEIGHT
+
+    if (bounds.width > currentWidth || bounds.height > currentHeight) {
+      updateCanvasDimensions(
+        Math.max(currentWidth, bounds.width),
+        Math.max(currentHeight, bounds.height),
+      )
+    }
 
     saveLoopBodyState()
     return newNode
@@ -208,7 +221,11 @@ export function useLoopBody(loopBodyNode, loopNode) {
 
     return {
       width: Math.max(LOOP_BODY_DIMENSIONS.MIN_WIDTH, maxRight + LOOP_BODY_DIMENSIONS.PADDING),
-      height: Math.max(LOOP_BODY_DIMENSIONS.MIN_HEIGHT, maxBottom + LOOP_BODY_DIMENSIONS.PADDING),
+      // 高度需要加上标题栏高度，确保节点不被标题栏遮挡
+      height: Math.max(
+        LOOP_BODY_DIMENSIONS.MIN_HEIGHT,
+        maxBottom + LOOP_BODY_DIMENSIONS.PADDING + LOOP_BODY_DIMENSIONS.HEADER_HEIGHT,
+      ),
     }
   }
 

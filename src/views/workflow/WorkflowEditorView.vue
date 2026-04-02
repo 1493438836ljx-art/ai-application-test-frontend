@@ -3220,11 +3220,16 @@ const LONG_PRESS_THRESHOLD = 150
 const handleActionBtnDown = (node, event) => {
   event.stopPropagation()
 
-  // 检查节点是否可以添加连线（开始节点使用 outputParams，其他节点使用 outputs）
-  const outputParams = node.type === 'start' ? (node.outputParams || []) : node.outputs
-  if (outputParams.length === 0) return
+  // 检查节点是否可以添加连线
+  // 开始节点：始终允许连线（即使没有定义初始变量）
+  // 其他节点：需要有 outputs 才能连线
+  if (node.type !== 'start') {
+    const outputs = node.outputs || []
+    if (outputs.length === 0) return
+  }
 
-  const port = outputParams[0]
+  const outputParams = node.type === 'start' ? (node.outputParams || []) : node.outputs
+  const port = outputParams[0] || { id: 'out-0', name: 'output' }
 
   // 立即禁用文本选择，防止长按检测期间文字被选中
   document.body.style.userSelect = 'none'
