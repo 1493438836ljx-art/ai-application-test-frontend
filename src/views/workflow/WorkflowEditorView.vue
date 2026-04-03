@@ -2168,8 +2168,12 @@ const openNodeConfig = (node) => {
   selectedNode.value = node
   configDialogVisible.value = true
   // 初始化条件判断节点配置
-  if (node.type === 'condition' || node.type === 'condition_simple') {
+  if (node.type === 'condition') {
     initConditionConfig()
+  }
+  // 初始化简单条件分支节点配置
+  if (node.type === 'condition_simple') {
+    initConditionSimpleConfig()
   }
   // 初始化文本清洗节点配置
   if (node.type === 'textClean') {
@@ -2438,6 +2442,134 @@ const initConditionConfig = () => {
       },
     ]
   }
+}
+
+// ========== 简单条件分支 (condition_simple) 相关函数 ==========
+
+// 操作符定义
+const CONDITION_OPERATORS = [
+  // 字符串操作符
+  { value: 'equals', label: '等于', types: ['String', 'Integer', 'File'] },
+  { value: 'notEquals', label: '不等于', types: ['String', 'Integer', 'File'] },
+  { value: 'contains', label: '包含', types: ['String', 'Array'] },
+  { value: 'startsWith', label: '开头是', types: ['String'] },
+  { value: 'endsWith', label: '结尾是', types: ['String'] },
+  { value: 'isEmpty', label: '为空', types: ['String', 'Array', 'Object'] },
+  { value: 'isNotEmpty', label: '不为空', types: ['String', 'Array', 'Object'] },
+  // 数值操作符
+  { value: 'greaterThan', label: '大于', types: ['Integer'] },
+  { value: 'lessThan', label: '小于', types: ['Integer'] },
+  { value: 'greaterThanOrEqual', label: '大于等于', types: ['Integer'] },
+  { value: 'lessThanOrEqual', label: '小于等于', types: ['Integer'] },
+  { value: 'between', label: '区间', types: ['Integer'] },
+  // 布尔操作符
+  { value: 'isTrue', label: '为真', types: ['Boolean'] },
+  { value: 'isFalse', label: '为假', types: ['Boolean'] },
+  // 数组操作符
+  { value: 'sizeEquals', label: '长度等于', types: ['Array'] },
+  { value: 'sizeGreaterThan', label: '长度大于', types: ['Array'] },
+]
+
+// 初始化简单条件分支配置
+const initConditionSimpleConfig = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.config.conditionExpression) {
+    selectedNode.value.config.conditionExpression = {
+      leftOperand: '',
+      leftOperandType: 'literal',
+      operator: 'equals',
+      rightOperand: '',
+      rightOperandType: 'literal',
+      rightOperandMin: '',
+      rightOperandMax: '',
+    }
+  }
+}
+
+// 获取当前左操作数的类型
+const getLeftOperandType = () => {
+  if (!selectedNode.value || !selectedNode.value.config.conditionExpression) return null
+  const leftOperand = selectedNode.value.config.conditionExpression.leftOperand
+  if (!leftOperand || !leftOperand.startsWith('${')) return null
+
+  // 解析变量引用
+  const match = leftOperand.match(/^\$\{(.+)\.(.+)\}$/)
+  if (!match) return null
+
+  const nodeName = match[1]
+  const paramName = match[2]
+
+  // 查找变量类型
+  const variables = getAvailableVariables()
+  const variable = variables.find((v) => v.nodeName === nodeName && v.paramName === paramName)
+  return variable?.type || null
+}
+
+// 根据左操作数类型过滤操作符
+const getFilteredOperators = () => {
+  const leftType = getLeftOperandType()
+  if (!leftType) {
+    // 类型未知时返回全部操作符
+    return CONDITION_OPERATORS
+  }
+
+  // 提取基础类型（处理 Array<String>, File<Excel> 等格式）
+  const baseType = leftType.match(/^(\w+)/)?.[1] || leftType
+
+  return CONDITION_OPERATORS.filter((op) => op.types.includes(baseType))
+}
+
+// 判断是否需要显示右操作数
+const showRightOperandInput = computed(() => {
+  if (!selectedNode.value || !selectedNode.value.config.conditionExpression) return true
+  const operator = selectedNode.value.config.conditionExpression.operator
+  const unaryOperators = ['isEmpty', 'isNotEmpty', 'isTrue', 'isFalse']
+  return !unaryOperators.includes(operator)
+})
+
+// 左操作数变化处理
+const onLeftOperandChange = (value) => {
+  if (!selectedNode.value) return
+  selectedNode.value.config.conditionExpression.leftOperand = value
+
+  // 检测是否是变量引用
+  if (value && value.startsWith('${')) {
+    selectedNode.value.config.conditionExpression.leftOperandType = 'reference'
+  } else {
+    selectedNode.value.config.conditionExpression.leftOperandType = 'literal'
+  }
+
+  // 如果当前操作符不在可用列表中，重置为第一个可用操作符
+  const filteredOps = getFilteredOperators()
+  const currentOp = selectedNode.value.config.conditionExpression.operator
+  const isOpAvailable = filteredOps.some((op) => op.value === currentOp)
+  if (!isOpAvailable && filteredOps.length > 0) {
+    selectedNode.value.config.conditionExpression.operator = filteredOps[0].value
+  }
+}
+
+// 操作符变化处理
+const onOperatorChange = (value) => {
+  if (!selectedNode.value) return
+  selectedNode.value.config.conditionExpression.operator = value
+}
+
+// 右操作数类型变化处理
+const onRightOperandTypeChange = (type) => {
+  if (!selectedNode.value) return
+  selectedNode.value.config.conditionExpression.rightOperandType = type
+  // 清空值
+  selectedNode.value.config.conditionExpression.rightOperand = ''
+  selectedNode.value.config.conditionExpression.rightOperandMin = ''
+  selectedNode.value.config.conditionExpression.rightOperandMax = ''
+}
+
+// 打开变量选择器（用于条件表达式）
+const conditionVarSelectorTarget = ref('left')
+const openVariableSelectorForCondition = (target) => {
+  conditionVarSelectorTarget.value = target
+  // 使用现有的变量选择器
+  variableSelectorVisible.value = true
 }
 
 // 添加条件分支
@@ -5665,6 +5797,150 @@ onUnmounted(() => {
             </div>
           </template>
 
+          <!-- 简单条件分支节点配置 (condition_simple) -->
+          <template v-if="selectedNode.type === 'condition_simple'">
+            <div class="config-item">
+              <div class="config-item-header">
+                <label>条件表达式</label>
+              </div>
+              <div class="condition-simple-config">
+                <!-- 左操作数 -->
+                <div class="operand-row">
+                  <label class="operand-label">左操作数</label>
+                  <div class="operand-input-group">
+                    <el-select
+                      v-model="selectedNode.config.conditionExpression.leftOperand"
+                      placeholder="选择变量"
+                      size="small"
+                      filterable
+                      allow-create
+                      class="operand-select"
+                      @change="onLeftOperandChange"
+                    >
+                      <el-option
+                        v-for="param in getAvailableVariables()"
+                        :key="param.name"
+                        :label="param.name"
+                        :value="'${' + param.name + '}'"
+                      />
+                    </el-select>
+                    <el-button type="primary" text size="small" @click="openVariableSelectorForCondition('left')">
+                      选择
+                    </el-button>
+                  </div>
+                  <div v-if="selectedNode.config.conditionExpression.leftOperandType" class="type-hint">
+                    检测到类型：{{ selectedNode.config.conditionExpression.leftOperandType }}
+                  </div>
+                </div>
+
+                <!-- 操作符 -->
+                <div class="operand-row">
+                  <label class="operand-label">操作符</label>
+                  <el-select
+                    v-model="selectedNode.config.conditionExpression.operator"
+                    placeholder="选择操作符"
+                    size="small"
+                    class="operator-select"
+                    @change="onOperatorChange"
+                  >
+                    <el-option
+                      v-for="op in getFilteredOperators()"
+                      :key="op.value"
+                      :label="op.label"
+                      :value="op.value"
+                    />
+                  </el-select>
+                </div>
+
+                <!-- 右操作数（动态显示） -->
+                <div v-if="showRightOperandInput" class="operand-row">
+                  <label class="operand-label">右操作数</label>
+                  <div class="right-operand-config">
+                    <!-- 值类型切换 -->
+                    <el-radio-group
+                      v-model="selectedNode.config.conditionExpression.rightOperandType"
+                      size="small"
+                      class="value-type-radio"
+                      @change="onRightOperandTypeChange"
+                    >
+                      <el-radio-button value="literal">固定值</el-radio-button>
+                      <el-radio-button value="reference">引用变量</el-radio-button>
+                    </el-radio-group>
+
+                    <!-- 固定值输入 -->
+                    <div v-if="selectedNode.config.conditionExpression.rightOperandType === 'literal'" class="value-input-wrapper">
+                      <!-- 区间操作符：两个输入框 -->
+                      <template v-if="selectedNode.config.conditionExpression.operator === 'between'">
+                        <div class="between-inputs">
+                          <el-input
+                            v-model="selectedNode.config.conditionExpression.rightOperandMin"
+                            placeholder="最小值"
+                            size="small"
+                            type="number"
+                          />
+                          <span class="between-separator">至</span>
+                          <el-input
+                            v-model="selectedNode.config.conditionExpression.rightOperandMax"
+                            placeholder="最大值"
+                            size="small"
+                            type="number"
+                          />
+                        </div>
+                      </template>
+                      <!-- 普通操作符：一个输入框 -->
+                      <template v-else>
+                        <el-input
+                          v-model="selectedNode.config.conditionExpression.rightOperand"
+                          placeholder="请输入固定值"
+                          size="small"
+                        />
+                      </template>
+                    </div>
+
+                    <!-- 引用变量输入 -->
+                    <div v-else class="operand-input-group">
+                      <el-select
+                        v-model="selectedNode.config.conditionExpression.rightOperand"
+                        placeholder="选择变量"
+                        size="small"
+                        filterable
+                        allow-create
+                        class="operand-select"
+                      >
+                        <el-option
+                          v-for="param in getAvailableVariables()"
+                          :key="param.name"
+                          :label="param.name"
+                          :value="'${' + param.name + '}'"
+                        />
+                      </el-select>
+                      <el-button type="primary" text size="small" @click="openVariableSelectorForCondition('right')">
+                        选择
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 分支预览 -->
+                <div class="branch-preview">
+                  <div class="preview-title">分支预览</div>
+                  <div class="preview-branches">
+                    <div class="preview-branch true-branch">
+                      <span class="branch-icon">✓</span>
+                      <span class="branch-name">true</span>
+                      <span class="branch-desc">条件成立时执行</span>
+                    </div>
+                    <div class="preview-branch false-branch">
+                      <span class="branch-icon">✗</span>
+                      <span class="branch-name">false</span>
+                      <span class="branch-desc">条件不成立时执行</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <!-- 条件判断节点配置 -->
           <template v-if="selectedNode.type === 'condition'">
             <div class="config-item">
@@ -7208,6 +7484,127 @@ onUnmounted(() => {
 .config-item .el-select,
 .config-item .el-textarea {
   width: 100%;
+}
+
+/* 简单条件分支配置样式 */
+.condition-simple-config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.operand-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.operand-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.operand-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.operand-select {
+  flex: 1;
+}
+
+.type-hint {
+  font-size: 12px;
+  color: #10b981;
+}
+
+.operator-select {
+  width: 100%;
+}
+
+.right-operand-config {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.value-type-radio {
+  display: flex;
+}
+
+.value-input-wrapper {
+  width: 100%;
+}
+
+.between-inputs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.between-inputs .el-input {
+  flex: 1;
+}
+
+.between-separator {
+  flex-shrink: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.branch-preview {
+  margin-top: 8px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.preview-title {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.preview-branches {
+  display: flex;
+  gap: 16px;
+}
+
+.preview-branch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  flex: 1;
+}
+
+.preview-branch.true-branch {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.preview-branch.false-branch {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.branch-icon {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.branch-name {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.branch-desc {
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 /* 条件分支配置样式 */
