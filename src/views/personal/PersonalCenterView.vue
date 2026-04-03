@@ -20,6 +20,8 @@ import SkillDetailView from '@/views/skill/SkillDetailView.vue'
 // Skill详情相关状态
 const showSkillDetail = ref(false)
 const currentSkillId = ref(null)
+const autoEditSkill = ref(false)
+const isNewSkill = ref(false)
 
 // Skill列表组件引用，用于刷新列表
 const skillLibraryRef = ref(null)
@@ -27,6 +29,24 @@ const skillLibraryRef = ref(null)
 // 查看Skill详情
 const handleViewSkillDetail = (skillId) => {
   currentSkillId.value = skillId
+  autoEditSkill.value = false
+  isNewSkill.value = false
+  showSkillDetail.value = true
+}
+
+// 编辑Skill详情（直接进入编辑模式）
+const handleEditSkillDetail = (skillId) => {
+  currentSkillId.value = skillId
+  autoEditSkill.value = true
+  isNewSkill.value = false
+  showSkillDetail.value = true
+}
+
+// 新建Skill（跳转到详情页的新建模式）
+const handleCreateSkillDetail = () => {
+  currentSkillId.value = null
+  autoEditSkill.value = true
+  isNewSkill.value = true
   showSkillDetail.value = true
 }
 
@@ -34,6 +54,8 @@ const handleViewSkillDetail = (skillId) => {
 const handleBackToSkillList = () => {
   showSkillDetail.value = false
   currentSkillId.value = null
+  autoEditSkill.value = false
+  isNewSkill.value = false
 }
 
 // Skill更新后刷新列表
@@ -247,12 +269,16 @@ const handleUserCommand = (command) => {
             <SkillLibraryView
               v-if="!showSkillDetail"
               @view-detail="handleViewSkillDetail"
+              @edit-detail="handleEditSkillDetail"
+              @create-detail="handleCreateSkillDetail"
             />
             <SkillDetailView
               v-else
               :skill-id="currentSkillId"
+              :auto-edit="autoEditSkill"
+              :is-new="isNewSkill"
               @back="handleBackToSkillList"
-              @edit="handleEditSkill"
+              @updated="handleSkillUpdated"
             />
           </template>
           <template v-else>

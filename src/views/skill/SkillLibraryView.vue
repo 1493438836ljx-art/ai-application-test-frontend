@@ -25,7 +25,7 @@ import {
 import SkillFormDialog from './components/SkillFormDialog.vue'
 
 // 定义 emit 事件
-const emit = defineEmits(['viewDetail'])
+const emit = defineEmits(['viewDetail', 'editDetail', 'createDetail'])
 
 // 加载状态
 const loading = ref(false)
@@ -147,38 +147,31 @@ const executionTypeConfig = {
   AI: 'AI驱动',
 }
 
-// 新建Skill
+// 新建Skill - 跳转到详情页的新建模式
 const handleCreateSkill = () => {
-  isEdit.value = false
-  currentSkill.value = null
-  dialogVisible.value = true
+  emit('createDetail')
 }
 
-// 编辑Skill
-const editSkill = async (item) => {
-  try {
-    loading.value = true
-    // 调用详情接口获取完整数据（包含入参出参）
-    const skillDetail = await getSkillDetail(item.id)
-    isEdit.value = true
-    currentSkill.value = skillDetail
-    dialogVisible.value = true
-  } catch {
-    // 错误已在 request.js 中统一处理
-  } finally {
-    loading.value = false
-  }
+// 编辑Skill - 跳转到详情页的编辑模式
+const editSkill = (item) => {
+  emit('editDetail', item.id)
 }
 
 // 提交表单
 const handleSubmit = async (formData, file) => {
   try {
     loading.value = true
+    // 添加默认值
+    const dataWithDefaults = {
+      ...formData,
+      category: 'USER', // 默认分类为 USER
+      isContainer: false, // 默认不启用容器
+    }
     if (isEdit.value && currentSkill.value) {
-      await updateSkill(currentSkill.value.id, formData, file)
+      await updateSkill(currentSkill.value.id, dataWithDefaults, file)
       ElMessage.success('更新成功')
     } else {
-      await createSkill(formData, file)
+      await createSkill(dataWithDefaults, file)
       ElMessage.success('创建成功')
     }
     fetchSkillList()
@@ -326,14 +319,16 @@ onMounted(() => {
         />
       </div>
       <div class="filter-options">
-        <el-select v-model="categoryFilter" placeholder="分类筛选" clearable style="width: 120px">
-          <el-option label="系统" value="SYSTEM" />
-          <el-option label="自定义" value="USER" />
-        </el-select>
-        <el-select v-model="statusFilter" placeholder="状态筛选" clearable style="width: 120px">
-          <el-option label="已发布" value="PUBLISHED" />
-          <el-option label="草稿" value="DRAFT" />
-        </el-select>
+        <el-radio-group v-model="statusFilter" size="small">
+          <el-radio-button label="全部" value="" />
+          <el-radio-button label="草稿" value="DRAFT" />
+          <el-radio-button label="已发布" value="PUBLISHED" />
+        </el-radio-group>
+        <el-radio-group v-model="categoryFilter" size="small">
+          <el-radio-button label="全部" value="" />
+          <el-radio-button label="系统" value="SYSTEM" />
+          <el-radio-button label="自定义" value="USER" />
+        </el-radio-group>
       </div>
     </div>
 
@@ -391,8 +386,17 @@ onMounted(() => {
 
           <!-- 入参出参 -->
           <div class="card-params">
-            <span class="param-item">入参 {{ item.inputParamCount || 0 }}</span>
-            <span class="param-item">出参 {{ item.outputParamCount || 0 }}</span>
+            <div class="param-item">
+              <el-icon class="param-icon input"><Download /></el-icon>
+              <span class="param-label">入参</span>
+              <span class="param-count">{{ item.inputParamCount || 0 }}</span>
+            </div>
+            <div class="param-divider"></div>
+            <div class="param-item">
+              <el-icon class="param-icon output"><Upload /></el-icon>
+              <span class="param-label">出参</span>
+              <span class="param-count">{{ item.outputParamCount || 0 }}</span>
+            </div>
           </div>
 
           <!-- 底部信息 -->
@@ -483,6 +487,7 @@ onMounted(() => {
 .filter-options {
   display: flex;
   gap: 12px;
+  align-items: center;
 }
 
 .skill-list {
@@ -607,16 +612,50 @@ onMounted(() => {
 /* 入参出参 */
 .card-params {
   display: flex;
-  gap: 24px;
-  padding: 12px 0;
-  border-top: 1px solid #f3f4f6;
-  border-bottom: 1px solid #f3f4f6;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 8px;
   margin-bottom: 12px;
 }
 
 .param-item {
-  font-size: 14px;
-  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.param-icon.input {
+  color: #6366f1;
+}
+
+.param-icon.output {
+  color: #10b981;
+}
+
+.param-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.param-count {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  min-width: 20px;
+  text-align: center;
+}
+
+.param-divider {
+  width: 1px;
+  height: 20px;
+  background: #e5e7eb;
 }
 
 /* 底部信息 */

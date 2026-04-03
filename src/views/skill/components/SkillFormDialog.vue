@@ -32,9 +32,7 @@ const formData = ref({
   name: '',
   description: '',
   executionType: 'AUTOMATED',
-  category: 'USER',
   accessType: 'PRIVATE',
-  isContainer: false,
   allowAddInputParams: false,
   allowAddOutputParams: false,
   inputParameters: [],
@@ -58,12 +56,6 @@ const executionTypeOptions = [
   { value: 'AI', label: 'AI驱动' },
 ]
 
-// 分类选项
-const categoryOptions = [
-  { value: 'SYSTEM', label: '系统' },
-  { value: 'USER', label: '用户' },
-]
-
 // 访问类型选项
 const accessTypeOptions = [
   { value: 'PUBLIC', label: '公开' },
@@ -84,9 +76,7 @@ watch(
         name: newSkill.name || '',
         description: newSkill.description || '',
         executionType: newSkill.executionType || 'AUTOMATED',
-        category: newSkill.category || 'USER',
         accessType: newSkill.accessType || 'PRIVATE',
-        isContainer: newSkill.isContainer || false,
         allowAddInputParams: newSkill.allowAddInputParams || false,
         allowAddOutputParams: newSkill.allowAddOutputParams || false,
         inputParameters: newSkill.inputParameters || [],
@@ -148,9 +138,7 @@ const resetForm = () => {
     name: '',
     description: '',
     executionType: 'AUTOMATED',
-    category: 'USER',
     accessType: 'PRIVATE',
-    isContainer: false,
     allowAddInputParams: false,
     allowAddOutputParams: false,
     inputParameters: [],
@@ -296,17 +284,6 @@ const visible = computed({
         </el-select>
       </el-form-item>
 
-      <el-form-item label="分类" prop="category">
-        <el-select v-model="formData.category" placeholder="请选择分类">
-          <el-option
-            v-for="item in categoryOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-      </el-form-item>
-
       <el-form-item label="访问类型" prop="accessType">
         <el-select v-model="formData.accessType" placeholder="请选择访问类型">
           <el-option
@@ -316,10 +293,6 @@ const visible = computed({
             :value="item.value"
           />
         </el-select>
-      </el-form-item>
-
-      <el-form-item label="是否容器" prop="isContainer">
-        <el-switch v-model="formData.isContainer" />
       </el-form-item>
 
       <!-- 入参配置 -->
