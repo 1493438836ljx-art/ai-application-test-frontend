@@ -432,6 +432,9 @@ const { formatParamType, getNodeInputParams } = useNodeParams()
 // 选中的节点
 const selectedNode = ref(null)
 
+// 配置弹窗可见性
+const configDialogVisible = ref(false)
+
 // 选中的连线
 const selectedConnection = ref(null)
 
@@ -2163,6 +2166,7 @@ const handleNodeClick = (node, event) => {
 // 双击打开节点配置面板
 const openNodeConfig = (node) => {
   selectedNode.value = node
+  configDialogVisible.value = true
   // 初始化条件判断节点配置
   if (node.type === 'condition' || node.type === 'condition_simple') {
     initConditionConfig()
@@ -2171,6 +2175,11 @@ const openNodeConfig = (node) => {
   if (node.type === 'textClean') {
     initTextCleanConfig()
   }
+}
+
+// 处理配置弹窗关闭
+const handleConfigDialogClose = () => {
+  selectedNode.value = null
 }
 
 // 处理画布点击事件
@@ -3671,7 +3680,7 @@ const handleLoopBodyNodeSelect = (node) => {
 
 // 处理循环体内节点双击（打开配置面板）
 const handleLoopBodyNodeDblClick = (node) => {
-  selectedNode.value = node
+  openNodeConfig(node)
 }
 
 // 开始拖拽画布
@@ -5398,52 +5407,64 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 左侧配置面板 -->
-      <div v-if="selectedNode" class="config-panel">
-        <div class="panel-header">
-          <div class="panel-title-area">
-            <!-- 编辑模式 -->
-            <input
-              v-if="isEditingNodeName"
-              v-model="editingNodeName"
-              class="panel-node-name-input"
-              @blur="finishEditNodeName"
-              @keyup.enter="finishEditNodeName"
-              @keyup.escape="cancelEditNodeName"
-              ref="nodeNameInput"
-            />
-            <!-- 显示模式 -->
-            <span
-              v-else
-              class="panel-node-name"
-              :class="{ 'editable': !['start', 'end', 'loopBodyCanvas'].includes(selectedNode.type) }"
-              @dblclick="startEditNodeName"
-            >{{ selectedNode.name }}</span>
-            <span v-if="nodeDescriptions[selectedNode.type]" class="panel-node-desc">
-              {{ nodeDescriptions[selectedNode.type] }}
-            </span>
-          </div>
-          <div v-if="!['start', 'end'].includes(selectedNode.type)" class="panel-actions">
-            <el-button text :icon="Tools" @click="debugNode" title="调试">调试</el-button>
-            <el-dropdown trigger="click">
-              <el-button text :icon="MoreFilled" />
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item :icon="Edit" @click="showRenameDialog">
-                    重命名
-                  </el-dropdown-item>
-                  <el-dropdown-item :icon="CopyDocument" @click="duplicateNode">
-                    创建副本
-                  </el-dropdown-item>
-                  <el-dropdown-item :icon="Delete" divided @click="deleteSelectedNode">
-                    删除
-                  </el-dropdown-item>
-                </el-dropdown-menu>
+      <!-- 节点配置弹窗 -->
+      <el-dialog
+        v-model="configDialogVisible"
+        width="560px"
+        :close-on-click-modal="true"
+        :close-on-press-escape="true"
+        :show-close="false"
+        @close="handleConfigDialogClose"
+        class="node-config-dialog"
+      >
+        <template #header>
+          <div class="dialog-header">
+            <div class="dialog-title-area">
+              <!-- 编辑模式 -->
+              <input
+                v-if="isEditingNodeName"
+                v-model="editingNodeName"
+                class="dialog-node-name-input"
+                @blur="finishEditNodeName"
+                @keyup.enter="finishEditNodeName"
+                @keyup.escape="cancelEditNodeName"
+                ref="nodeNameInput"
+              />
+              <!-- 显示模式 -->
+              <span
+                v-else
+                class="dialog-node-name"
+                :class="{ 'editable': !['start', 'end', 'loopBodyCanvas'].includes(selectedNode?.type) }"
+                @dblclick="startEditNodeName"
+              >{{ selectedNode?.name }}</span>
+              <span v-if="selectedNode && nodeDescriptions[selectedNode.type]" class="dialog-node-desc">
+                {{ nodeDescriptions[selectedNode.type] }}
+              </span>
+            </div>
+            <div class="dialog-actions">
+              <template v-if="selectedNode && !['start', 'end'].includes(selectedNode.type)">
+                <el-button text :icon="Tools" @click="debugNode" title="调试">调试</el-button>
+                <el-dropdown trigger="click">
+                  <el-button text :icon="MoreFilled" />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item :icon="Edit" @click="showRenameDialog">
+                        重命名
+                      </el-dropdown-item>
+                      <el-dropdown-item :icon="CopyDocument" @click="duplicateNode">
+                        创建副本
+                      </el-dropdown-item>
+                      <el-dropdown-item :icon="Delete" divided @click="deleteSelectedNode">
+                        删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
-            </el-dropdown>
+            </div>
           </div>
-        </div>
-        <div class="panel-content">
+        </template>
+        <div class="dialog-content" v-if="selectedNode">
           <!-- 开始节点 - 输出参数配置 -->
           <template v-if="selectedNode.type === 'start'">
             <div class="config-item">
@@ -5594,7 +5615,7 @@ onUnmounted(() => {
                   </el-table-column>
                   <el-table-column label="类型" min-width="150" align="center">
                     <template #default="{ row }">
-                      <span v-if="row.elementType" class="param-type-tag">Array<{{ row.elementType }}></span>
+                      <span v-if="row.elementType" class="param-type-tag" v-text="'Array<' + row.elementType + '>'"></span>
                       <span v-else class="param-type-placeholder">关联后自动推断</span>
                     </template>
                   </el-table-column>
@@ -6380,7 +6401,7 @@ onUnmounted(() => {
           </template>
 
         </div>
-      </div>
+      </el-dialog>
     </div>
 
     <!-- 变量选择器对话框 -->
@@ -7074,53 +7095,56 @@ onUnmounted(() => {
   color: #ef4444;
 }
 
-.config-panel {
-  position: absolute;
-  left: 0;
-  top: 60px;
-  bottom: 0;
-  width: 520px;
-  background: #fff;
-  border-right: 1px solid #e5e7eb;
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
+/* 节点配置弹窗样式 */
+.node-config-dialog :deep(.el-dialog__header) {
+  padding: 0 !important;
+  margin: 0;
 }
 
-.panel-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid #e5e7eb;
+.node-config-dialog :deep(.el-dialog__body) {
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.dialog-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
   background: #fafbfc;
 }
 
-.panel-title-area {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.dialog-content {
+  padding: 16px 20px;
 }
 
-.panel-node-name{
+.dialog-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dialog-node-name {
   font-size: 16px;
   font-weight: 600;
   color: #1f2937;
 }
 
-.panel-node-name.editable {
+.dialog-node-name.editable {
   cursor: pointer;
 }
 
-.panel-node-name.editable:hover {
-  color: #6366f1;
+.dialog-node-name.editable:hover {
+  color: #409eff;
 }
 
-.panel-node-name-input {
+.dialog-node-name-input {
   font-size: 16px;
   font-weight: 600;
   color: #1f2937;
-  border: 1px solid #6366f1;
+  border: 1px solid #409eff;
   border-radius: 4px;
   padding: 2px 8px;
   outline: none;
@@ -7128,15 +7152,15 @@ onUnmounted(() => {
   width: 200px;
 }
 
-.panel-node-desc {
+.dialog-node-desc {
   font-size: 12px;
   color: #6b7280;
-  margin-top: 2px;
 }
 
-.panel-actions {
+.dialog-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .panel-content {
