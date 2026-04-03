@@ -23,7 +23,9 @@ import {
   unpublishSkill,
 } from '@/api/skill'
 import SkillFormDialog from './components/SkillFormDialog.vue'
-import SkillDetailDialog from './components/SkillDetailDialog.vue'
+
+// 定义 emit 事件
+const emit = defineEmits(['viewDetail'])
 
 // 加载状态
 const loading = ref(false)
@@ -57,27 +59,13 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const currentSkill = ref(null)
 
-// 详情弹窗
-const detailDialogVisible = ref(false)
-const detailSkill = ref(null)
-
 // 点击卡片查看详情
-const handleCardClick = async (item) => {
-  try {
-    loading.value = true
-    const skillDetail = await getSkillDetail(item.id)
-    detailSkill.value = skillDetail
-    detailDialogVisible.value = true
-  } catch {
-    // 错误已在 request.js 中统一处理
-  } finally {
-    loading.value = false
-  }
+const handleCardClick = (item) => {
+  emit('viewDetail', item.id)
 }
 
-// 从详情弹窗点击编辑
+// 从详情页点击编辑（供详情页调用）
 const handleEditFromDetail = (skill) => {
-  detailDialogVisible.value = false
   editSkill(skill)
 }
 
@@ -361,27 +349,15 @@ onMounted(() => {
 
       <div v-else class="skill-grid">
         <div v-for="item in skillList" :key="item.id" class="skill-card" @click="handleCardClick(item)">
+          <!-- 右上角角标 -->
+          <div class="card-corner-tag">
+            <span v-if="item.status === 'DRAFT'" class="corner-tag draft">草稿</span>
+            <span v-else-if="item.status === 'PUBLISHED' && item.accessType === 'PUBLIC'" class="corner-tag public">公开</span>
+          </div>
+
+          <!-- 标题行 -->
           <div class="card-header">
-            <div class="card-title-row">
-              <h3 class="card-title">{{ item.name }}</h3>
-              <el-tag
-                size="small"
-                :color="getCategoryConfig(item.category).color"
-                class="category-tag"
-              >
-                {{ getCategoryConfig(item.category).label }}
-              </el-tag>
-              <el-tag
-                size="small"
-                :color="getAccessTypeConfig(item.accessType).color"
-                class="category-tag"
-              >
-                {{ getAccessTypeConfig(item.accessType).label }}
-              </el-tag>
-              <el-tag :type="getStatusConfig(item.status).type" size="small">
-                {{ getStatusConfig(item.status).label }}
-              </el-tag>
-            </div>
+            <h3 class="card-title">{{ item.name }}</h3>
             <el-dropdown trigger="click" @command="(cmd) => handleCommand(cmd, item)" @click.stop>
               <el-button text :icon="MoreFilled" class="more-btn" @click.stop />
               <template #dropdown>
@@ -400,35 +376,38 @@ onMounted(() => {
             </el-dropdown>
           </div>
 
-          <p class="card-description">{{ item.description || '暂无描述' }}</p>
-
-          <div class="card-stats">
-            <div class="stat-item">
-              <span class="stat-label">执行类型</span>
-              <span class="stat-value">{{ executionTypeConfig[item.executionType] || '-' }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">入参</span>
-              <span class="stat-value">{{ item.inputParamCount || 0 }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">出参</span>
-              <span class="stat-value">{{ item.outputParamCount || 0 }}</span>
-            </div>
+          <!-- 执行类型 -->
+          <div class="card-execution-type">
+            <el-tag
+              size="small"
+              :class="item.executionType === 'AI' ? 'ai-tag' : item.executionType === 'AUTOMATED' ? 'automated-tag' : ''"
+            >
+              {{ executionTypeConfig[item.executionType] || '-' }}
+            </el-tag>
           </div>
 
+          <!-- 描述 -->
+          <p class="card-description">{{ item.description || '暂无描述' }}</p>
+
+          <!-- 入参出参 -->
+          <div class="card-params">
+            <span class="param-item">入参 {{ item.inputParamCount || 0 }}</span>
+            <span class="param-item">出参 {{ item.outputParamCount || 0 }}</span>
+          </div>
+
+          <!-- 底部信息 -->
           <div class="card-footer">
-            <div class="footer-time">
-              <div class="time-row">
-                <span class="time-label">创建时间：</span>
-                <span>{{ formatTime(item.createdAt) }}</span>
-                <span class="creator-label">创建人：</span>
-                <span>{{ item.createdBy || '-' }}</span>
-              </div>
-              <div class="time-row">
-                <span class="time-label">更新时间：</span>
-                <span>{{ formatTime(item.updatedAt) }}</span>
-              </div>
+            <div class="footer-row">
+              <span class="footer-label">创建人</span>
+              <span class="footer-value">{{ item.createdBy || '-' }}</span>
+              <span class="footer-label">创建时间</span>
+              <span class="footer-value">{{ formatTime(item.createdAt) }}</span>
+            </div>
+            <div class="footer-row">
+              <span class="footer-label">更新人</span>
+              <span class="footer-value">{{ item.updatedBy || '-' }}</span>
+              <span class="footer-label">更新时间</span>
+              <span class="footer-value">{{ formatTime(item.updatedAt) }}</span>
             </div>
           </div>
         </div>
@@ -454,14 +433,6 @@ onMounted(() => {
       :skill="currentSkill"
       :is-edit="isEdit"
       @submit="handleSubmit"
-    />
-
-    <!-- 详情弹窗 -->
-    <SkillDetailDialog
-      v-model="detailDialogVisible"
-      :skill="detailSkill"
-      @edit="handleEditFromDetail"
-      @publish="handlePublishSkill"
     />
   </div>
 </template>
@@ -537,6 +508,7 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.3s ease;
   border: 1px solid #e5e7eb;
+  position: relative;
 }
 
 .skill-card:hover {
@@ -545,19 +517,37 @@ onMounted(() => {
   border-color: #6366f1;
 }
 
+/* 右上角角标 */
+.card-corner-tag {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+}
+
+.corner-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 0 12px 0 8px;
+}
+
+.corner-tag.draft {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.corner-tag.public {
+  background: #e8f5e9;
+  color: #52c41a;
+}
+
+/* 卡片头部 */
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
-.card-title-row {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
+  margin-bottom: 8px;
 }
 
 .card-title {
@@ -568,11 +558,13 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .more-btn {
   padding: 4px;
   color: #9ca3af;
+  flex-shrink: 0;
 }
 
 .more-btn:hover {
@@ -580,11 +572,26 @@ onMounted(() => {
   background: #f3f4f6;
 }
 
-.category-tag {
+/* 执行类型 */
+.card-execution-type {
+  margin-bottom: 12px;
+}
+
+/* AI驱动标签 - 渐变紫色主题 */
+.ai-tag {
+  background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
   color: #fff;
   border: none;
 }
 
+/* 自动化标签 - 蓝色主题 */
+.automated-tag {
+  background: #ecf5ff;
+  color: #409eff;
+  border: 1px solid #d9ecff;
+}
+
+/* 描述 */
 .card-description {
   font-size: 14px;
   color: #6b7280;
@@ -597,7 +604,8 @@ onMounted(() => {
   min-height: 42px;
 }
 
-.card-stats {
+/* 入参出参 */
+.card-params {
   display: flex;
   gap: 24px;
   padding: 12px 0;
@@ -606,45 +614,37 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.stat-value {
+.param-item {
   font-size: 14px;
-  font-weight: 500;
   color: #374151;
 }
 
+/* 底部信息 */
 .card-footer {
   display: flex;
-  justify-content: flex-start;
-  align-items: flex-end;
-}
-
-.footer-time {
-  display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: #9ca3af;
+  gap: 8px;
 }
 
-.time-row {
+.footer-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  font-size: 12px;
 }
 
-.creator-label {
-  margin-left: 16px;
+.footer-label {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.footer-value {
+  color: #374151;
+  min-width: 60px;
+}
+
+.footer-row .footer-value:last-child {
+  flex: 1;
 }
 
 .pagination-wrapper {

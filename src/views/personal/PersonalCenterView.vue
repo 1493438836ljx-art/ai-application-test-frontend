@@ -15,6 +15,23 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import SkillLibraryView from '@/views/skill/SkillLibraryView.vue'
+import SkillDetailView from '@/views/skill/SkillDetailView.vue'
+
+// Skill详情相关状态
+const showSkillDetail = ref(false)
+const currentSkillId = ref(null)
+
+// 查看Skill详情
+const handleViewSkillDetail = (skillId) => {
+  currentSkillId.value = skillId
+  showSkillDetail.value = true
+}
+
+// 返回Skill列表
+const handleBackToSkillList = () => {
+  showSkillDetail.value = false
+  currentSkillId.value = null
+}
 
 // Icon component map for dynamic rendering
 const iconComponents = {
@@ -109,6 +126,11 @@ const handleSidebarMenuClick = (item) => {
 // Sub-menu click handler
 const handleSubMenuClick = (child) => {
   router.push(`/personal/${child.key}`)
+  // 切换菜单时重置Skill详情状态
+  if (child.key !== 'skill-library') {
+    showSkillDetail.value = false
+    currentSkillId.value = null
+  }
 }
 
 // User dropdown command handler
@@ -213,7 +235,15 @@ const handleUserCommand = (command) => {
       <main class="content-area">
         <div class="content-wrapper" :class="{ 'no-padding': activeMenu === 'skill-library' }">
           <template v-if="activeMenu === 'skill-library'">
-            <SkillLibraryView />
+            <SkillLibraryView
+              v-if="!showSkillDetail"
+              @view-detail="handleViewSkillDetail"
+            />
+            <SkillDetailView
+              v-else
+              :skill-id="currentSkillId"
+              @back="handleBackToSkillList"
+            />
           </template>
           <template v-else>
             <h2 class="content-title">{{ activeMenuLabel }}</h2>
