@@ -2569,7 +2569,10 @@ const conditionVarSelectorTarget = ref('left')
 const openVariableSelectorForCondition = (target) => {
   conditionVarSelectorTarget.value = target
   // 使用现有的变量选择器
-  variableSelectorVisible.value = true
+  variableSelectorField.value = `condition_${target}`
+  variableSelectorFilterType.value = null
+  variableSelectorFilterTypes.value = null
+  showVariableSelectorDialog.value = true
 }
 
 // 添加条件分支
@@ -3046,6 +3049,29 @@ const selectLoopOutputVariable = (item) => {
 // 选择变量
 const selectVariable = (variable) => {
   if (!selectedNode.value || !variableSelectorField.value) return
+
+  // 处理简单条件分支节点的变量选择
+  if (selectedNode.value.type === 'condition_simple') {
+    if (variableSelectorField.value === 'condition_left') {
+      selectedNode.value.config.conditionExpression.leftOperand = variable
+      selectedNode.value.config.conditionExpression.leftOperandType = 'reference'
+      // 从变量中获取类型
+      const upstreamOutputs = getUpstreamNodeOutputs()
+      const selectedOutput = upstreamOutputs.find((item) => item.variable === variable)
+      if (selectedOutput) {
+        selectedNode.value.config.conditionExpression.leftOperandDetectedType = selectedOutput.type || 'String'
+      }
+      showVariableSelectorDialog.value = false
+      variableSelectorField.value = null
+      return
+    } else if (variableSelectorField.value === 'condition_right') {
+      selectedNode.value.config.conditionExpression.rightOperand = variable
+      selectedNode.value.config.conditionExpression.rightOperandType = 'reference'
+      showVariableSelectorDialog.value = false
+      variableSelectorField.value = null
+      return
+    }
+  }
 
   // 处理循环节点输出变量的选择
   if (variableSelectorField.value.startsWith('loopOutputParam_')) {
