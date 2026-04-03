@@ -21,6 +21,9 @@ import SkillDetailView from '@/views/skill/SkillDetailView.vue'
 const showSkillDetail = ref(false)
 const currentSkillId = ref(null)
 
+// Skill列表组件引用，用于刷新列表
+const skillLibraryRef = ref(null)
+
 // 查看Skill详情
 const handleViewSkillDetail = (skillId) => {
   currentSkillId.value = skillId
@@ -31,6 +34,12 @@ const handleViewSkillDetail = (skillId) => {
 const handleBackToSkillList = () => {
   showSkillDetail.value = false
   currentSkillId.value = null
+}
+
+// Skill更新后刷新列表
+const handleSkillUpdated = () => {
+  // 刷新列表的逻辑可以通过重新渲染 SkillLibraryView 来实现
+  // 这里简单地通过改变 key 来强制重新渲染
 }
 
 // Icon component map for dynamic rendering
@@ -243,6 +252,7 @@ const handleUserCommand = (command) => {
               v-else
               :skill-id="currentSkillId"
               @back="handleBackToSkillList"
+              @edit="handleEditSkill"
             />
           </template>
           <template v-else>
@@ -268,10 +278,11 @@ const handleUserCommand = (command) => {
 <style scoped>
 /* Page Layout */
 .personal-center-page {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: #fff;
+  overflow: hidden;
 }
 
 /* Top Navigation Bar */
@@ -375,6 +386,8 @@ const handleUserCommand = (command) => {
   flex: 1;
   display: flex;
   background: #f5f7fa;
+  height: calc(100vh - 56px);
+  overflow: hidden;
 }
 
 /* Left Sidebar */
@@ -383,6 +396,7 @@ const handleUserCommand = (command) => {
   background: #fff;
   border-right: 1px solid #e8e8e8;
   flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .sidebar-menu {
@@ -470,7 +484,8 @@ const handleUserCommand = (command) => {
 .content-area {
   flex: 1;
   padding: 24px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .content-wrapper {
@@ -483,6 +498,9 @@ const handleUserCommand = (command) => {
 .content-wrapper.no-padding {
   padding: 24px;
   background: #f5f7fa;
+  height: auto;
+  min-height: calc(100vh - 56px - 72px - 48px);
+  overflow: visible;
 }
 
 .content-title {
