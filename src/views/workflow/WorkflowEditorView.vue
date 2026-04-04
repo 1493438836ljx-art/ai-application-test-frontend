@@ -460,7 +460,88 @@ const handleConnectionMouseEnter = (conn) => {
 // 连线绘制状态
 const drawingConnection = ref(null)
 
-// 添加节点弹窗状态
+// 分支选择对话框状态
+const showBranchSelectDialog = ref(false)
+const pendingConnection = ref(null)
+
+// 获取可选择的分支列表
+const getSelectableBranches = computed(() => {
+  if (!pendingConnection.value) return []
+  const sourceNode = pendingConnection.value.sourceNode
+  if (!sourceNode || sourceNode.type !== 'condition_multi') return []
+
+  const branches = []
+  const conditions = sourceNode.conditions
+
+  // 如果没有 conditions 数据，提供默认分支
+  if (!conditions) {
+    return [
+      { id: 'default', label: '默认分支', type: 'default' }
+    ]
+  }
+
+  if (conditions.cases) {
+    // 添加所有 case 分支
+    conditions.cases.forEach((c) => {
+      branches.push({
+        id: c.id,
+        label: c.label,
+        type: 'case',
+      })
+    })
+  }
+  // 添加默认分支
+  if (conditions.defaultCase) {
+    branches.push({
+      id: conditions.defaultCase.id,
+      label: conditions.defaultCase.label,
+      type: 'default',
+    })
+  } else {
+    // 如果没有默认分支，添加一个默认的
+    branches.push({
+      id: 'default',
+      label: '默认分支',
+      type: 'default',
+    })
+  }
+  return branches
+})
+
+// 处理分支选择
+const handleBranchSelect = (branch) => {
+  if (!pendingConnection.value) return
+
+  const { sourceNode, sourceParam, sourceParamIndex, targetNode, targetParam, targetParamIndex } =
+    pendingConnection.value
+
+  // 创建新连线，带上分支标签
+  const newConnection = {
+    id: `conn-${Date.now()}`,
+    sourceId: sourceNode.id,
+    sourcePort: sourceParam?.id || `out-${sourceParamIndex}`,
+    sourceParamIndex: sourceParamIndex,
+    targetId: targetNode.id,
+    targetPort: targetParam?.id || `in-${targetParamIndex}`,
+    targetParamIndex: targetParamIndex,
+    branchLabel: branch.label,
+    branchId: branch.id,
+    branchType: branch.type,
+  }
+
+  connections.value.push(newConnection)
+
+  // 重置状态
+  showBranchSelectDialog.value = false
+  pendingConnection.value = null
+}
+
+// 取消分支选择
+const cancelBranchSelect = () => {
+  showBranchSelectDialog.value = false
+  pendingConnection.value = null
+}
+
 const showAddNodePopover = ref(null) // 存储要添加子节点的父节点ID
 const insertConnection = ref(null) // 存储要在中间插入节点的连线
 const popoverPosition = ref({ x: 0, y: 0 })
@@ -4162,6 +4243,28 @@ const stopConnection = (event) => {
           const sourcePort = sourceNode.outputs?.[0]
           const targetPort = targetNode.inputs?.[0]
 
+          // 检查源节点是否是多路分支节点
+          if (sourceNode.type === 'condition_multi') {
+            // 保存待完成的连线信息
+            pendingConnection.value = {
+              sourceNode,
+              sourceParam: sourcePort,
+              sourceParamIndex: 0,
+              targetNode,
+              targetParam: targetPort,
+              targetParamIndex: 0,
+            }
+            // 显示分支选择对话框
+            showBranchSelectDialog.value = true
+            drawingConnection.value = null
+            longPressState.isLongPress = false
+            longPressState.hasTriggeredDrag = false
+            if (event) {
+              event.stopPropagation()
+            }
+            return
+          }
+
           // 创建连线
           const newConnection = {
             id: `conn-${Date.now()}`,
@@ -4240,6 +4343,23 @@ const endConnection = (targetNode, targetParam, paramIndex, event) => {
   )
 
   if (existingConnection) {
+    drawingConnection.value = null
+    return
+  }
+
+  // 检查源节点是否是多路分支节点
+  if (sourceNode.type === 'condition_multi') {
+    // 保存待完成的连线信息
+    pendingConnection.value = {
+      sourceNode,
+      sourceParam,
+      sourceParamIndex,
+      targetNode,
+      targetParam,
+      targetParamIndex: paramIndex,
+    }
+    // 显示分支选择对话框
+    showBranchSelectDialog.value = true
     drawingConnection.value = null
     return
   }
@@ -5173,6 +5293,23 @@ onUnmounted(() => {
               @click.stop="showAddPopoverForConnection(conn, $event)"
             >
               <el-icon :size="12"><Plus /></el-icon>
+            </div>
+          </div>
+
+          <!-- 连线上的分支标签 -->
+          <div
+            v-for="conn in connections"
+            :key="'label-' + conn.id"
+          >
+            <div
+              v-if="conn.branchLabel && getConnectionMidpoint(conn)"
+              class="connection-branch-label"
+              :style="{
+                left: `${getConnectionMidpoint(conn).x}px`,
+                top: `${getConnectionMidpoint(conn).y}px`,
+              }"
+            >
+              {{ conn.branchLabel }}
             </div>
           </div>
 
@@ -7177,6 +7314,38 @@ onUnmounted(() => {
       </div>
     </el-dialog>
 
+    <!-- 分支选择对话框（多路分支节点连线时使用） -->
+    <el-dialog
+      v-model="showBranchSelectDialog"
+      title="选择分支"
+      width="400px"
+      class="branch-select-dialog"
+    >
+      <div class="branch-list">
+        <div
+          v-for="branch in getSelectableBranches"
+          :key="branch.id"
+          class="branch-item"
+          :class="{ 'is-default': branch.type === 'default' }"
+          @click="handleBranchSelect(branch)"
+        >
+          <div class="branch-info">
+            <el-icon v-if="branch.type === 'default'" class="branch-icon">
+              <Right />
+            </el-icon>
+            <el-icon v-else class="branch-icon">
+              <Switch />
+            </el-icon>
+            <span class="branch-label">{{ branch.label }}</span>
+          </div>
+          <el-tag v-if="branch.type === 'default'" type="info" size="small">默认</el-tag>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="cancelBranchSelect">取消</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 重命名对话框 -->
     <el-dialog v-model="renameDialogVisible" title="重命名节点" width="400px">
       <el-input v-model="newNodeName" placeholder="请输入节点名称" @keyup.enter="confirmRename" />
@@ -7372,6 +7541,22 @@ onUnmounted(() => {
   background: #06b6d4;
   transform: translate(-50%, -50%) scale(1.15);
   box-shadow: 0 4px 12px rgba(34, 211, 238, 0.5);
+}
+
+/* 连线分支标签 */
+.connection-branch-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #6366f1;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
 }
 
 .flow-node {
@@ -10385,6 +10570,48 @@ onUnmounted(() => {
 
 .param-value-input {
   position: relative;
+}
+
+/* 分支选择对话框样式 */
+.branch-select-dialog .branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-select-dialog .branch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.branch-select-dialog .branch-item:hover {
+  border-color: #6366f1;
+  background: #f5f3ff;
+}
+
+.branch-select-dialog .branch-item.is-default {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.branch-select-dialog .branch-item.is-default:hover {
+  border-color: #0ea5e9;
+  background: #e0f2fe;
+}
+
+.branch-select-dialog .branch-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
 }
 </style>
 

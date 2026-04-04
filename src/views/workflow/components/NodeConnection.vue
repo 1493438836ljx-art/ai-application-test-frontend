@@ -26,6 +26,29 @@
       stroke-linecap="round"
     />
 
+    <!-- 分支标签 -->
+    <g
+      v-if="connection.branchLabel"
+      :transform="`translate(${middlePoint.x}, ${middlePoint.y})`"
+      class="branch-label-group"
+    >
+      <rect
+        :x="-labelWidth / 2 - 4"
+        y="-10"
+        :width="labelWidth + 8"
+        height="20"
+        rx="4"
+        fill="#6366f1"
+      />
+      <text
+        x="0"
+        y="0"
+        text-anchor="middle"
+        dominant-baseline="middle"
+        style="font-size: 12px; fill: #fff; font-weight: 500"
+      >{{ connection.branchLabel }}</text>
+    </g>
+
     <!-- 中间的添加节点按钮（悬停时显示） -->
     <g
       v-if="showAddButton"
@@ -97,6 +120,18 @@ const isHovered = ref(false)
 
 // 是否显示添加按钮
 const showAddButton = computed(() => isHovered.value)
+
+// 计算标签宽度
+const labelWidth = computed(() => {
+  const label = props.connection.branchLabel
+  if (!label) return 0
+  // 估算文字宽度（中文字符约14px，英文约8px）
+  let width = 0
+  for (const char of label) {
+    width += /[\u4e00-\u9fa5]/.test(char) ? 14 : 8
+  }
+  return width
+})
 
 // 计算连线路径
 const { pathData, middlePoint } = computed(() => {
