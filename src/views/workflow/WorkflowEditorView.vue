@@ -6305,33 +6305,38 @@ onUnmounted(() => {
                   class="multi-case-item"
                 >
                   <div class="case-header">
-                    <el-input
-                      v-model="caseItem.label"
-                      placeholder="分支名称"
-                      size="small"
-                      class="case-label-input"
-                      @input="onCaseLabelChange(index, $event)"
-                    />
-                    <el-select
-                      :model-value="caseItem.priority"
-                      size="small"
-                      class="case-priority-select"
-                      @change="onCasePriorityChange(index, $event)"
-                    >
-                      <el-option
-                        v-for="opt in getPriorityOptions()"
-                        :key="opt.value"
-                        :label="opt.label"
-                        :value="opt.value"
+                    <div class="case-title">
+                      <span class="case-index">{{ index + 1 }}</span>
+                      <el-input
+                        v-model="caseItem.label"
+                        placeholder="请输入分支名称"
+                        size="small"
+                        class="case-label-input"
+                        @input="onCaseLabelChange(index, $event)"
                       />
-                    </el-select>
-                    <el-button
-                      type="danger"
-                      text
-                      size="small"
-                      :icon="Delete"
-                      @click="removeMultiCase(index)"
-                    />
+                    </div>
+                    <div class="case-actions">
+                      <el-select
+                        :model-value="caseItem.priority"
+                        size="small"
+                        class="case-priority-select"
+                        @change="onCasePriorityChange(index, $event)"
+                      >
+                        <el-option
+                          v-for="opt in getPriorityOptions()"
+                          :key="opt.value"
+                          :label="opt.label"
+                          :value="opt.value"
+                        />
+                      </el-select>
+                      <el-button
+                        type="danger"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeMultiCase(index)"
+                      />
+                    </div>
                   </div>
 
                   <div class="case-expression">
@@ -6418,14 +6423,17 @@ onUnmounted(() => {
                 <!-- 默认分支 -->
                 <div class="multi-case-item default-case">
                   <div class="case-header">
-                    <el-input
-                      :model-value="selectedNode.conditions.defaultCase.label"
-                      placeholder="默认分支名称"
-                      size="small"
-                      class="case-label-input"
-                      @input="onDefaultLabelChange($event)"
-                    />
-                    <el-tag type="info" size="small">默认</el-tag>
+                    <div class="case-title">
+                      <span class="case-index default">默</span>
+                      <el-input
+                        :model-value="selectedNode.conditions.defaultCase.label"
+                        placeholder="请输入默认分支名称"
+                        size="small"
+                        class="case-label-input"
+                        @input="onDefaultLabelChange($event)"
+                      />
+                    </div>
+                    <el-tag type="info" size="small" class="default-tag">默认分支</el-tag>
                   </div>
                   <div class="default-case-desc">
                     以上条件都不满足时执行此分支
@@ -8170,9 +8178,44 @@ onUnmounted(() => {
 
 .case-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 12px;
+}
+
+.case-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.case-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.case-index.default {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+}
+
+.default-tag {
+  margin-left: 32px;
+}
+
+.case-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 32px;
 }
 
 .case-label-input {
