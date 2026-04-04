@@ -2175,6 +2175,10 @@ const openNodeConfig = (node) => {
   if (node.type === 'condition_simple') {
     initConditionSimpleConfig()
   }
+  // 初始化多路分支节点配置
+  if (node.type === 'condition_multi') {
+    initConditionMultiConfig()
+  }
   // 初始化文本清洗节点配置
   if (node.type === 'textClean') {
     initTextCleanConfig()
@@ -2573,6 +2577,158 @@ const openVariableSelectorForCondition = (target) => {
   variableSelectorFilterType.value = null
   variableSelectorFilterTypes.value = null
   showVariableSelectorDialog.value = true
+}
+
+// ========== 多路分支节点 (condition_multi) 相关函数 ==========
+
+// 初始化多路分支配置
+const initConditionMultiConfig = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.conditions) {
+    selectedNode.value.conditions = {
+      type: 'MULTI',
+      cases: [],
+      defaultCase: {
+        id: 'default',
+        label: '默认分支'
+      }
+    }
+  }
+}
+
+// 添加多路分支 case
+const addMultiCase = () => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  const cases = selectedNode.value.conditions.cases
+  const newPriority = cases.length > 0 ? Math.max(...cases.map(c => c.priority || 0)) + 1 : 1
+  const newCase = {
+    id: `case-${Date.now()}`,
+    label: `分支${cases.length + 1}`,
+    priority: newPriority,
+    expression: {
+      leftOperand: '',
+      operator: 'equals',
+      rightOperand: ''
+    }
+  }
+  cases.push(newCase)
+  // 按优先级排序
+  sortCasesByPriority()
+}
+
+// 删除多路分支 case
+const removeMultiCase = (index) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases.splice(index, 1)
+}
+
+// 按 priority 排序 cases
+const sortCasesByPriority = () => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases.sort((a, b) => (a.priority || 0) - (b.priority || 0))
+}
+
+// 获取可用优先级选项
+const getPriorityOptions = () => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return []
+  const caseCount = selectedNode.value.conditions.cases.length
+  return Array.from({ length: caseCount }, (_, i) => ({
+    label: `${i + 1}`,
+    value: i + 1
+  }))
+}
+
+// 处理 case 名称变化
+const onCaseLabelChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases[index].label = value
+}
+
+// 处理 case 优先级变化
+const onCasePriorityChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases[index].priority = value
+  sortCasesByPriority()
+}
+
+// 处理 case 左操作数变化
+const onCaseLeftOperandChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases[index].expression.leftOperand = value
+}
+
+// 处理 case 操作符变化
+const onCaseOperatorChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases[index].expression.operator = value
+}
+
+// 处理 case 右操作数变化
+const onCaseRightOperandChange = (index, value) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.cases[index].expression.rightOperand = value
+}
+
+// 处理默认分支名称变化
+const onDefaultLabelChange = (value) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return
+  selectedNode.value.conditions.defaultCase.label = value
+}
+
+// case 变量选择器相关状态
+const conditionCaseIndex = ref(-1)
+const conditionCaseOperand = ref('left')
+
+// 打开 case 变量选择器
+const openCaseVarSelector = (caseIndex, operand) => {
+  conditionCaseIndex.value = caseIndex
+  conditionCaseOperand.value = operand
+  variableSelectorField.value = `condition_multi_${operand}_${caseIndex}`
+  variableSelectorFilterType.value = null
+  variableSelectorFilterTypes.value = null
+  showVariableSelectorDialog.value = true
+}
+
+// 获取 case 的过滤后操作符列表
+const getFilteredOperatorsForCase = (caseIndex) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return CONDITION_OPERATORS
+  const caseItem = selectedNode.value.conditions.cases[caseIndex]
+  if (!caseItem || !caseItem.expression.leftOperand) return CONDITION_OPERATORS
+
+  const leftOperand = caseItem.expression.leftOperand
+  if (!leftOperand.startsWith('${')) return CONDITION_OPERATORS
+
+  // 解析变量引用，获取类型
+  const match = leftOperand.match(/^\$\{(.+)\.(.+)\}$/)
+  if (!match) return CONDITION_OPERATORS
+
+  const nodeName = match[1]
+  const paramName = match[2]
+  const variables = getAvailableVariables()
+  const variable = variables.find(v => v.nodeName === nodeName && v.paramName === paramName)
+
+  if (!variable || !variable.type) return CONDITION_OPERATORS
+
+  const baseType = variable.type.match(/^(\w+)/)?.[1] || variable.type
+  return CONDITION_OPERATORS.filter((op) => op.types.includes(baseType))
+}
+
+// 判断 case 是否需要右操作数
+const showCaseRightOperand = (caseIndex) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return true
+  const caseItem = selectedNode.value.conditions.cases[caseIndex]
+  if (!caseItem) return true
+  const operator = caseItem.expression.operator
+  const unaryOperators = ['isEmpty', 'isNotEmpty', 'isTrue', 'isFalse']
+  return !unaryOperators.includes(operator)
+}
+
+// 判断 case 是否需要两个右操作数（区间）
+const showCaseTwoRightOperands = (caseIndex) => {
+  if (!selectedNode.value || !selectedNode.value.conditions) return false
+  const caseItem = selectedNode.value.conditions.cases[caseIndex]
+  if (!caseItem) return false
+  return caseItem.expression.operator === 'between'
 }
 
 // 添加条件分支
@@ -3070,6 +3226,33 @@ const selectVariable = (variable) => {
       showVariableSelectorDialog.value = false
       variableSelectorField.value = null
       return
+    }
+  }
+
+  // 处理多路分支节点的变量选择
+  if (selectedNode.value.type === 'condition_multi' && variableSelectorField.value.startsWith('condition_multi_')) {
+    // 解析 field: condition_multi_left_0 或 condition_multi_right_1
+    const match = variableSelectorField.value.match(/condition_multi_(left|right)_(\d+)/)
+    if (match) {
+      const operand = match[1]
+      const caseIndex = parseInt(match[2])
+      const cases = selectedNode.value.conditions?.cases
+      if (cases && cases[caseIndex]) {
+        if (operand === 'left') {
+          cases[caseIndex].expression.leftOperand = variable
+          // 从变量中获取类型
+          const upstreamOutputs = getUpstreamNodeOutputs()
+          const selectedOutput = upstreamOutputs.find((item) => item.variable === variable)
+          if (selectedOutput) {
+            cases[caseIndex].expression.leftOperandDetectedType = selectedOutput.type || 'String'
+          }
+        } else {
+          cases[caseIndex].expression.rightOperand = variable
+        }
+        showVariableSelectorDialog.value = false
+        variableSelectorField.value = null
+        return
+      }
     }
   }
 
@@ -5967,6 +6150,154 @@ onUnmounted(() => {
             </div>
           </template>
 
+          <!-- 多路分支节点配置 (condition_multi) -->
+          <template v-if="selectedNode.type === 'condition_multi'">
+            <div class="config-item">
+              <div class="config-item-header">
+                <label>分支配置</label>
+                <el-button type="primary" text size="small" :icon="Plus" @click="addMultiCase">
+                  添加分支
+                </el-button>
+              </div>
+
+              <div class="multi-cases-container">
+                <!-- Case 分支列表 -->
+                <div
+                  v-for="(caseItem, index) in selectedNode.conditions.cases"
+                  :key="caseItem.id"
+                  class="multi-case-item"
+                >
+                  <div class="case-header">
+                    <el-input
+                      v-model="caseItem.label"
+                      placeholder="分支名称"
+                      size="small"
+                      class="case-label-input"
+                      @input="onCaseLabelChange(index, $event)"
+                    />
+                    <el-select
+                      :model-value="caseItem.priority"
+                      size="small"
+                      class="case-priority-select"
+                      @change="onCasePriorityChange(index, $event)"
+                    >
+                      <el-option
+                        v-for="opt in getPriorityOptions()"
+                        :key="opt.value"
+                        :label="opt.label"
+                        :value="opt.value"
+                      />
+                    </el-select>
+                    <el-button
+                      type="danger"
+                      text
+                      size="small"
+                      :icon="Delete"
+                      @click="removeMultiCase(index)"
+                    />
+                  </div>
+
+                  <div class="case-expression">
+                    <!-- 左操作数 -->
+                    <div class="operand-row">
+                      <label class="operand-label">左操作数</label>
+                      <div class="operand-input-group">
+                        <el-select
+                          :model-value="caseItem.expression.leftOperand"
+                          placeholder="选择变量"
+                          size="small"
+                          filterable
+                          allow-create
+                          class="operand-select"
+                          @change="onCaseLeftOperandChange(index, $event)"
+                        >
+                          <el-option
+                            v-for="param in getAvailableVariables()"
+                            :key="param.name"
+                            :label="param.name"
+                            :value="'${' + param.name + '}'"
+                          />
+                        </el-select>
+                        <el-button type="primary" text size="small" @click="openCaseVarSelector(index, 'left')">
+                          选择
+                        </el-button>
+                      </div>
+                    </div>
+
+                    <!-- 操作符 -->
+                    <div class="operand-row">
+                      <label class="operand-label">操作符</label>
+                      <el-select
+                        :model-value="caseItem.expression.operator"
+                        placeholder="选择操作符"
+                        size="small"
+                        class="operator-select"
+                        @change="onCaseOperatorChange(index, $event)"
+                      >
+                        <el-option
+                          v-for="op in getFilteredOperatorsForCase(index)"
+                          :key="op.value"
+                          :label="op.label"
+                          :value="op.value"
+                        />
+                      </el-select>
+                    </div>
+
+                    <!-- 右操作数 -->
+                    <div v-if="showCaseRightOperand(index)" class="operand-row">
+                      <label class="operand-label">右操作数</label>
+                      <div v-if="showCaseTwoRightOperands(index)" class="between-inputs">
+                        <el-input
+                          :model-value="Array.isArray(caseItem.expression.rightOperand) ? caseItem.expression.rightOperand[0] : ''"
+                          placeholder="最小值"
+                          size="small"
+                          type="number"
+                          @input="onCaseRightOperandChange(index, [$event, Array.isArray(caseItem.expression.rightOperand) ? caseItem.expression.rightOperand[1] : ''])"
+                        />
+                        <span class="between-separator">至</span>
+                        <el-input
+                          :model-value="Array.isArray(caseItem.expression.rightOperand) ? caseItem.expression.rightOperand[1] : ''"
+                          placeholder="最大值"
+                          size="small"
+                          type="number"
+                          @input="onCaseRightOperandChange(index, [Array.isArray(caseItem.expression.rightOperand) ? caseItem.expression.rightOperand[0] : '', $event])"
+                        />
+                      </div>
+                      <div v-else class="operand-input-group">
+                        <el-input
+                          :model-value="caseItem.expression.rightOperand"
+                          placeholder="请输入值"
+                          size="small"
+                          @input="onCaseRightOperandChange(index, $event)"
+                        />
+                        <el-button type="primary" text size="small" @click="openCaseVarSelector(index, 'right')">
+                          选择
+                        </el-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 默认分支 -->
+                <div class="multi-case-item default-case">
+                  <div class="case-header">
+                    <el-input
+                      :model-value="selectedNode.conditions.defaultCase.label"
+                      placeholder="默认分支名称"
+                      size="small"
+                      class="case-label-input"
+                      @input="onDefaultLabelChange($event)"
+                    />
+                    <el-tag type="info" size="small">默认</el-tag>
+                  </div>
+                  <div class="default-case-desc">
+                    以上条件都不满足时执行此分支
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <!-- 条件判断节点配置 -->
           <template v-if="selectedNode.type === 'condition'">
             <div class="config-item">
@@ -7631,6 +7962,54 @@ onUnmounted(() => {
 .branch-desc {
   font-size: 12px;
   opacity: 0.8;
+}
+
+/* 多路分支配置样式 */
+.multi-cases-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.multi-case-item {
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.multi-case-item.default-case {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.case-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.case-label-input {
+  flex: 1;
+}
+
+.case-priority-select {
+  width: 80px;
+}
+
+.case-expression {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.default-case-desc {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 8px 0;
 }
 
 /* 条件分支配置样式 */
