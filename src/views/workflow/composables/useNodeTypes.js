@@ -124,21 +124,10 @@ export const NODE_TYPE_DEFINITIONS = {
   },
 
   // ========== 执行节点 ==========
-  skill: {
-    type: 'skill',
-    name: '技能',
-    category: 'EXECUTION',
-    icon: 'Cpu',
-    color: '#6366f1',
-    width: 220,
-    height: 70,
-    allowInput: true,
-    allowOutput: true,
-    description: '从 Skill 库加载的执行节点',
-  },
+  // Skill 节点从后端动态加载，不在此定义
 }
 
-// 默认节点类型配置（核心9种类型，用于后端未返回时的回退）
+// 默认节点类型配置（核心8种类型 + Skill 从后端动态加载）
 const DEFAULT_NODE_TYPES = [
   // 基础节点
   NODE_TYPE_DEFINITIONS.start,
@@ -150,8 +139,6 @@ const DEFAULT_NODE_TYPES = [
   NODE_TYPE_DEFINITIONS.batch,
   NODE_TYPE_DEFINITIONS.async,
   NODE_TYPE_DEFINITIONS.collect,
-  // 执行节点
-  NODE_TYPE_DEFINITIONS.skill,
   // 循环体画布（特殊类型，不在选择器中显示）
   { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC', hidden: true },
 ]
@@ -416,6 +403,42 @@ export function useNodeTypes() {
     return NODE_TYPE_DEFINITIONS[type]
   }
 
+  /**
+   * 设置动态加载的 Skill 列表（作为执行节点）
+   * @param {Array} skills - Skill 列表
+   */
+  const setSkillNodeTypes = (skills) => {
+    // 移除已有的 Skill 节点（type 以 'skill-' 开头）
+    const nonSkillTypes = nodeTypes.value.filter((t) => !t.type.startsWith('skill-'))
+
+    // 将 Skill 转换为节点类型格式
+    const skillNodeTypes = skills.map((skill) => ({
+      type: `skill-${skill.id}`,
+      name: skill.name,
+      category: 'EXECUTION',
+      icon: 'Cpu',
+      color: '#6366f1',
+      width: 220,
+      height: 70,
+      allowInput: true,
+      allowOutput: true,
+      description: skill.description || '',
+      // 保存原始 Skill 数据，用于添加节点时使用
+      skillData: skill,
+    }))
+
+    // 合并节点类型
+    nodeTypes.value = [...nonSkillTypes, ...skillNodeTypes]
+  }
+
+  /**
+   * 获取执行节点类型（即 Skill 列表）
+   * @returns {Array} 执行节点类型列表
+   */
+  const getExecutionNodeTypes = () => {
+    return nodeTypes.value.filter((t) => t.category === 'EXECUTION')
+  }
+
   return {
     // 状态
     nodeTypes,
@@ -454,6 +477,10 @@ export function useNodeTypes() {
 
     // 类型定义
     getNodeTypeDefinition,
+
+    // Skill 节点管理
+    setSkillNodeTypes,
+    getExecutionNodeTypes,
 
     // 计算属性
     nodeTypesByCategory,

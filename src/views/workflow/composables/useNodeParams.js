@@ -289,6 +289,20 @@ export const getNodeInputParams = (node) => {
     }))
   }
 
+  // Skill 节点：从 inputParams 读取
+  if (node.type === 'skill') {
+    const inputParams = node.inputParams || []
+    if (inputParams.length === 0) {
+      return [{ name: '-', type: '-', isPlaceholder: true }]
+    }
+    return inputParams.map((param) => ({
+      name: param.name || '',
+      type: formatParamType(param),
+      required: param.required,
+      description: param.description,
+    }))
+  }
+
   // 其他节点：默认输入参数
   return [{ name: 'input', type: 'Any' }]
 }
@@ -409,6 +423,19 @@ export const getNodeOutputParams = (node) => {
         description: '生成的表格文件',
       },
     ]
+  }
+
+  // Skill 节点：从 outputParams 读取
+  if (node.type === 'skill') {
+    const outputParams = node.outputParams || []
+    if (outputParams.length === 0) {
+      return [{ name: '-', type: '-', isPlaceholder: true }]
+    }
+    return outputParams.map((param) => ({
+      name: param.name || '',
+      type: formatParamType(param),
+      description: param.description,
+    }))
   }
 
   // 默认情况下显示占位输出参数

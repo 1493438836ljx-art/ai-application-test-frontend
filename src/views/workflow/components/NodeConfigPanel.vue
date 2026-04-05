@@ -460,6 +460,13 @@ const dialogTitle = computed(() => {
 // 节点类型配置
 const nodeTypeConfig = computed(() => {
   if (!props.node) return null
+
+  // 对于 Skill 节点，使用 skillId 查找对应的 Skill 类型配置
+  if (props.node.type === 'skill' && props.node.skillId) {
+    const skillType = `skill-${props.node.skillId}`
+    return props.nodeTypes.find((t) => t.type === skillType)
+  }
+
   return props.nodeTypes.find((t) => t.type === props.node.type)
 })
 
@@ -484,7 +491,9 @@ const categoryLabel = computed(() => {
     OUTPUT: '输出',
     REPORT: '报告',
   }
-  return categoryMap[nodeTypeConfig.value?.category] || '其他'
+  // 优先从节点类型配置获取，其次从节点本身的 nodeCategory 获取
+  const category = nodeTypeConfig.value?.category || props.node?.nodeCategory
+  return categoryMap[category] || '其他'
 })
 
 // 分类标签类型
@@ -494,7 +503,9 @@ const categoryTagType = computed(() => {
     LOGIC: 'warning',
     EXECUTION: 'primary',
   }
-  return typeMap[nodeTypeConfig.value?.category] || 'info'
+  // 优先从节点类型配置获取，其次从节点本身的 nodeCategory 获取
+  const category = nodeTypeConfig.value?.category || props.node?.nodeCategory
+  return typeMap[category] || 'info'
 })
 
 // 解析输出参数

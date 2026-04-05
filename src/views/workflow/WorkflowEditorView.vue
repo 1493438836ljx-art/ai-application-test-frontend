@@ -52,8 +52,10 @@ import { useNodeParams, flattenJsonTree, getNodeOutputParams } from './composabl
 // import RunPanel from './components/RunPanel.vue'
 // import EditorToolbar from './components/EditorToolbar.vue'
 import { generateCopyName, getExistingNames } from './utils/nodeCopyName'
+import { generateUuid } from './utils/uuid'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
+import { getSkillList, getSkillDetail } from '@/api/skill.js'
 import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow } from '@/api/workflow.js'
 import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
 import { getDictionaryColumnsByName } from '@/api/dictionary.js'
@@ -103,7 +105,7 @@ const nodeCategories = [
   { key: 'EXECUTION', name: '执行节点' },
 ]
 
-// 节点类型配置（核心9种类型，从后端动态获取）
+// 节点类型配置（核心8种类型 + Skill 从后端动态加载）
 const nodeTypes = ref([
   // 基础节点（不在弹窗中显示）
   { type: 'start', name: '开始', icon: 'VideoPlay', color: '#22c55e', category: 'BASIC' },
@@ -116,8 +118,7 @@ const nodeTypes = ref([
   { type: 'batch', name: '批处理', icon: 'DataLine', color: '#3b82f6', category: 'LOGIC' },
   { type: 'async', name: '异步处理', icon: 'Connection', color: '#0ea5e9', category: 'LOGIC' },
   { type: 'collect', name: '结果收集', icon: 'FolderAdd', color: '#14b8a6', category: 'LOGIC' },
-  // 执行节点
-  { type: 'skill', name: '技能', icon: 'Cpu', color: '#6366f1', category: 'EXECUTION' },
+  // 执行节点（Skill 从后端动态加载）
 ])
 
 // 加载节点类型数据
@@ -131,7 +132,7 @@ const loadNodeTypes = async () => {
         { type: 'end', name: '结束', icon: 'CircleCheck', color: '#ef4444', category: 'BASIC' },
         { type: 'loopBodyCanvas', name: '循环体', icon: 'Grid', color: '#3b82f6', category: 'BASIC', hidden: true },
       ]
-      // 核心节点类型定义（前端回退）
+      // 核心节点类型定义（前端回退，不包含 skill）
       const coreNodeTypeDefinitions = [
         { type: 'loop', name: '循环', icon: 'Refresh', color: '#8b5cf6', category: 'LOGIC' },
         { type: 'condition_simple', name: '条件分支', icon: 'Share', color: '#f59e0b', category: 'LOGIC' },
@@ -139,7 +140,6 @@ const loadNodeTypes = async () => {
         { type: 'batch', name: '批处理', icon: 'DataLine', color: '#3b82f6', category: 'LOGIC' },
         { type: 'async', name: '异步处理', icon: 'Connection', color: '#0ea5e9', category: 'LOGIC' },
         { type: 'collect', name: '结果收集', icon: 'FolderAdd', color: '#14b8a6', category: 'LOGIC' },
-        { type: 'skill', name: '技能', icon: 'Cpu', color: '#6366f1', category: 'EXECUTION' },
       ]
       // 核心节点图标映射
       const coreIconMap = {
@@ -149,7 +149,6 @@ const loadNodeTypes = async () => {
         batch: 'DataLine',
         async: 'Connection',
         collect: 'FolderAdd',
-        skill: 'Cpu',
       }
       // 核心节点颜色映射
       const coreColorMap = {
@@ -159,7 +158,6 @@ const loadNodeTypes = async () => {
         batch: '#3b82f6',
         async: '#0ea5e9',
         collect: '#14b8a6',
-        skill: '#6366f1',
       }
       // 映射后端数据到前端格式
       const apiNodeTypes = response.map((item) => ({
@@ -180,6 +178,33 @@ const loadNodeTypes = async () => {
   } catch (error) {
     console.error('加载节点类型失败:', error)
     ElMessage.error('系统服务异常！')
+  }
+
+  // 加载已发布的 Skill 列表作为执行节点
+  await loadSkillNodes()
+}
+
+// 加载已发布的 Skill 列表作为执行节点
+const loadSkillNodes = async () => {
+  try {
+    const response = await getSkillList({ status: 'PUBLISHED', size: 100 })
+    if (response && response.content) {
+      const skillNodeTypes = response.content.map((skill) => ({
+        type: `skill-${skill.id}`,
+        name: skill.name,
+        icon: 'Cpu',
+        color: '#6366f1',
+        category: 'EXECUTION',
+        description: skill.description || '',
+        skillData: skill, // 保存原始 Skill 数据
+      }))
+      // 移除已有的 Skill 节点，添加新的
+      const nonSkillTypes = nodeTypes.value.filter((t) => !t.type.startsWith('skill-'))
+      nodeTypes.value = [...nonSkillTypes, ...skillNodeTypes]
+    }
+  } catch (error) {
+    console.error('加载 Skill 列表失败:', error)
+    // 不显示错误提示，因为可能没有 Skill 数据
   }
 }
 
@@ -1236,7 +1261,13 @@ const publishWorkflow = () => {
 }
 
 // 添加节点
-const addNode = (type) => {
+const addNode = async (type) => {
+  // 处理 Skill 节点
+  if (type.startsWith('skill-')) {
+    await addSkillNode(type)
+    return
+  }
+
   const typeConfig = getNodeTypeConfig(type)
   const newNode = {
     id: `${type}-${Date.now()}`,
@@ -1349,6 +1380,82 @@ const addNode = (type) => {
   // 关闭添加节点弹窗
   showAddNodePopover.value = null
   insertConnection.value = null
+}
+
+// 添加 Skill 节点（从 Skill 库动态加载）
+const addSkillNode = async (type) => {
+  // 从 type 中提取 skillId（格式：skill-{skillId}）
+  const skillId = type.replace('skill-', '')
+
+  // 获取节点类型配置（包含 skillData）
+  const typeConfig = getNodeTypeConfig(type)
+  if (!typeConfig || !typeConfig.skillData) {
+    ElMessage.error('Skill 数据不存在')
+    return
+  }
+
+  try {
+    // 获取 Skill 详情（包含入参出参）
+    const skillDetail = await getSkillDetail(skillId)
+    if (!skillDetail) {
+      ElMessage.error('获取 Skill 详情失败')
+      return
+    }
+
+    // 创建节点对象
+    const newNode = {
+      id: `skill-${Date.now()}`,
+      nodeUuid: generateUuid(), // 使用标准 UUID 格式
+      type: 'skill',
+      nodeCategory: 'EXECUTION',
+      name: skillDetail.name,
+      description: skillDetail.description || '', // Skill 描述信息
+      skillId: skillId,
+      allowAddInputParams: skillDetail.allowAddInputParams || false, // 是否支持额外增加入参
+      allowAddOutputParams: skillDetail.allowAddOutputParams || false, // 是否支持额外增加出参
+      skillSnapshot: JSON.stringify({
+        id: skillDetail.id,
+        name: skillDetail.name,
+        description: skillDetail.description || '',
+        inputParameters: skillDetail.inputParameters || [],
+        outputParameters: skillDetail.outputParameters || [],
+      }),
+      // 映射输入参数
+      inputParams: (skillDetail.inputParameters || []).map((p) => ({
+        name: p.paramName,
+        type: p.paramType,
+        required: p.required,
+        description: p.description,
+        defaultValue: p.defaultValue,
+        valueSourceType: 'literal',
+        value: p.defaultValue ?? '',
+      })),
+      // 映射输出参数
+      outputParams: (skillDetail.outputParameters || []).map((p) => ({
+        name: p.paramName,
+        type: p.paramType,
+        description: p.description,
+      })),
+      x: 200 + Math.random() * 300,
+      y: 250 + Math.random() * 150,
+      inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
+      outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
+      config: {},
+    }
+
+    // 添加节点到画布
+    nodes.value.push(newNode)
+    selectedNode.value = newNode
+
+    // 关闭添加节点弹窗
+    showAddNodePopover.value = null
+    insertConnection.value = null
+
+    ElMessage.success(`已添加技能节点：${skillDetail.name}`)
+  } catch (error) {
+    console.error('添加 Skill 节点失败:', error)
+    ElMessage.error('系统服务异常！')
+  }
 }
 
 // 重命名节点
@@ -3051,6 +3158,57 @@ const showVariableSelectorWithTypes = (field, filterTypes, enableMultiSelectForD
   showVariableSelectorDialog.value = true
 }
 
+// Skill 节点变量选择器相关
+const skillVariableSelectorIndex = ref(null)
+const skillVariableSelectorType = ref(null) // 'input' | 'output'
+
+// 显示 Skill 节点的变量选择器
+const showSkillVariableSelector = (index, type) => {
+  skillVariableSelectorIndex.value = index
+  skillVariableSelectorType.value = type
+  variableSelectorField.value = `skill-${type}-${index}`
+  isMultiSelectMode.value = false
+  variableSelectorFilterType.value = null
+  variableSelectorFilterTypes.value = null
+  selectedColumns.value = new Set()
+  expandedVariableIndex.value = new Set()
+  showVariableSelectorDialog.value = true
+}
+
+// 处理 Skill 节点文件上传
+const handleSkillFileUpload = (file, index) => {
+  // 这里可以处理文件上传逻辑，暂时只保存文件名
+  if (selectedNode.value && selectedNode.value.inputParams && selectedNode.value.inputParams[index]) {
+    selectedNode.value.inputParams[index].value = file.name
+    selectedNode.value.inputParams[index].valueSourceType = 'literal'
+  }
+  return false // 阻止自动上传
+}
+
+// Skill 节点添加额外输入参数
+const addSkillInputParam = () => {
+  if (!selectedNode.value) return
+  if (!selectedNode.value.inputParams) {
+    selectedNode.value.inputParams = []
+  }
+  // 添加一个新的空参数
+  selectedNode.value.inputParams.push({
+    name: '',
+    type: 'String',
+    required: false,
+    description: '',
+    valueSourceType: 'literal',
+    value: '',
+    isExtra: true, // 标记为额外添加的参数
+  })
+}
+
+// Skill 节点删除额外输入参数
+const removeSkillInputParam = (index) => {
+  if (!selectedNode.value || !selectedNode.value.inputParams) return
+  selectedNode.value.inputParams.splice(index, 1)
+}
+
 // 获取 cols 变量的动态类型
 const getColsDynamicType = () => {
   if (!selectedNode.value) return 'String'
@@ -3755,7 +3913,13 @@ const showAddPopoverForConnection = (connection, event) => {
 }
 
 // 添加子节点并自动连线
-const addConnectedNode = (type) => {
+const addConnectedNode = async (type) => {
+  // 处理 Skill 节点
+  if (type.startsWith('skill-')) {
+    await addConnectedSkillNode(type)
+    return
+  }
+
   const parentNode = nodes.value.find((n) => n.id === showAddNodePopover.value)
   if (!parentNode) return
 
@@ -3944,6 +4108,145 @@ const addConnectedNode = (type) => {
   showAddNodePopover.value = null
   insertConnection.value = null
   selectedNode.value = newNode
+}
+
+// 添加 Skill 子节点并自动连线
+const addConnectedSkillNode = async (type) => {
+  const parentNode = nodes.value.find((n) => n.id === showAddNodePopover.value)
+  if (!parentNode) return
+
+  // 从 type 中提取 skillId（格式：skill-{skillId}）
+  const skillId = type.replace('skill-', '')
+
+  try {
+    // 获取 Skill 详情
+    const skillDetail = await getSkillDetail(skillId)
+    if (!skillDetail) {
+      ElMessage.error('获取 Skill 详情失败')
+      return
+    }
+
+    // 节点宽度常量
+    const nodeWidth = 220
+
+    // 计算新节点位置
+    let insertX = parentNode.x + nodeWidth + nodeWidth * 0.5
+    let insertY = parentNode.y
+
+    if (insertConnection.value) {
+      const midpoint = getConnectionMidpoint(insertConnection.value)
+      if (midpoint) {
+        insertX = midpoint.x
+        insertY = midpoint.y
+      }
+    }
+
+    // 创建节点对象
+    const newNode = {
+      id: `skill-${Date.now()}`,
+      nodeUuid: generateUuid(), // 使用标准 UUID 格式
+      type: 'skill',
+      nodeCategory: 'EXECUTION',
+      name: skillDetail.name,
+      description: skillDetail.description || '', // Skill 描述信息
+      skillId: skillId,
+      allowAddInputParams: skillDetail.allowAddInputParams || false, // 是否支持额外增加入参
+      allowAddOutputParams: skillDetail.allowAddOutputParams || false, // 是否支持额外增加出参
+      skillSnapshot: JSON.stringify({
+        id: skillDetail.id,
+        name: skillDetail.name,
+        description: skillDetail.description || '',
+        inputParameters: skillDetail.inputParameters || [],
+        outputParameters: skillDetail.outputParameters || [],
+      }),
+      inputParams: (skillDetail.inputParameters || []).map((p) => ({
+        name: p.paramName,
+        type: p.paramType,
+        required: p.required,
+        description: p.description,
+        defaultValue: p.defaultValue,
+        valueSourceType: 'literal',
+        value: p.defaultValue ?? '',
+      })),
+      outputParams: (skillDetail.outputParameters || []).map((p) => ({
+        name: p.paramName,
+        type: p.paramType,
+        description: p.description,
+      })),
+      x: insertX,
+      y: insertY,
+      inputs: [{ id: `in-${Date.now()}`, name: '输入' }],
+      outputs: [{ id: `out-${Date.now()}`, name: '输出' }],
+      config: {},
+    }
+
+    // 添加节点到画布
+    nodes.value.push(newNode)
+
+    // 如果是从连线中间插入
+    if (insertConnection.value) {
+      const oldConn = insertConnection.value
+      const targetNode = nodes.value.find((n) => n.id === oldConn.targetId)
+
+      // 删除原连线
+      connections.value = connections.value.filter((c) => c.id !== oldConn.id)
+
+      // 创建两条新连线
+      const sourcePort = parentNode.outputs[0]
+      const newInputPort = newNode.inputs[0]
+      const newOutputPort = newNode.outputs[0]
+      const targetPort = targetNode?.inputs[0]
+
+      if (sourcePort && newInputPort) {
+        connections.value.push({
+          id: `conn-${Date.now()}`,
+          sourceId: parentNode.id,
+          sourcePort: sourcePort.id,
+          targetId: newNode.id,
+          targetPort: newInputPort.id,
+          sourceParamIndex: 0,
+          targetParamIndex: 0,
+        })
+      }
+
+      if (newOutputPort && targetPort && targetNode) {
+        connections.value.push({
+          id: `conn-${Date.now() + 1}`,
+          sourceId: newNode.id,
+          sourcePort: newOutputPort.id,
+          targetId: targetNode.id,
+          targetPort: targetPort.id,
+          sourceParamIndex: 0,
+          targetParamIndex: 0,
+        })
+      }
+    } else {
+      // 正常添加子节点，创建连线
+      const sourcePort = parentNode.outputs[0]
+      const targetPort = newNode.inputs[0]
+
+      if (sourcePort && targetPort) {
+        connections.value.push({
+          id: `conn-${Date.now()}`,
+          sourceId: parentNode.id,
+          sourcePort: sourcePort.id,
+          targetId: newNode.id,
+          targetPort: targetPort.id,
+          sourceParamIndex: 0,
+          targetParamIndex: 0,
+        })
+      }
+    }
+
+    showAddNodePopover.value = null
+    insertConnection.value = null
+    selectedNode.value = newNode
+
+    ElMessage.success(`已添加技能节点：${skillDetail.name}`)
+  } catch (error) {
+    console.error('添加 Skill 节点失败:', error)
+    ElMessage.error('系统服务异常！')
+  }
 }
 
 // 开始拖拽节点
@@ -5915,8 +6218,9 @@ onUnmounted(() => {
                 :class="{ 'editable': !['start', 'end', 'loopBodyCanvas'].includes(selectedNode?.type) }"
                 @dblclick="startEditNodeName"
               >{{ selectedNode?.name }}</span>
-              <span v-if="selectedNode && nodeDescriptions[selectedNode.type]" class="dialog-node-desc">
-                {{ nodeDescriptions[selectedNode.type] }}
+              <!-- 节点描述：优先使用节点自身的 description，其次使用 nodeDescriptions 映射 -->
+              <span v-if="selectedNode && (selectedNode.description || nodeDescriptions[selectedNode.type])" class="dialog-node-desc">
+                {{ selectedNode.description || nodeDescriptions[selectedNode.type] }}
               </span>
             </div>
             <div class="dialog-actions">
@@ -7104,6 +7408,177 @@ onUnmounted(() => {
                   <el-table-column label="类型" width="120" align="center">
                     <template #default="{ row }">
                       <span class="param-type-tag">{{ row.type }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </template>
+
+          <!-- Skill 节点配置 -->
+          <template v-if="selectedNode.type === 'skill'">
+            <!-- 输入参数 -->
+            <div class="io-section">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输入</span>
+                <!-- 当 allowAddInputParams 为 true 时显示添加参数按钮 -->
+                <el-button
+                  v-if="selectedNode.allowAddInputParams"
+                  type="primary"
+                  text
+                  size="small"
+                  :icon="Plus"
+                  @click="addSkillInputParam"
+                  style="margin-left: auto;"
+                >
+                  添加参数
+                </el-button>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="selectedNode.inputParams"
+                  size="small"
+                  class="io-table"
+                  empty-text="暂无输入参数"
+                >
+                  <el-table-column label="变量名" min-width="120">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span v-if="row.required" class="required-mark">*</span>
+                        <!-- 额外添加的参数可编辑变量名 -->
+                        <el-input
+                          v-if="row.isExtra"
+                          v-model="row.name"
+                          placeholder="输入变量名"
+                          size="small"
+                          style="flex: 1"
+                        />
+                        <span v-else class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip v-if="row.description" :content="row.description" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="120" align="center">
+                    <template #default="{ row }">
+                      <!-- 额外添加的参数可选择类型 -->
+                      <el-select
+                        v-if="row.isExtra"
+                        v-model="row.type"
+                        placeholder="选择类型"
+                        size="small"
+                        style="width: 100%"
+                      >
+                        <el-option label="String" value="String" />
+                        <el-option label="Integer" value="Integer" />
+                        <el-option label="Boolean" value="Boolean" />
+                        <el-option label="Array" value="Array" />
+                        <el-option label="Object" value="Object" />
+                      </el-select>
+                      <span v-else class="param-type-tag">{{ row.type || 'String' }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="变量值" min-width="160">
+                    <template #default="{ row, $index }">
+                      <!-- 布尔类型：下拉框 + 关联选择 -->
+                      <div v-if="row.type === 'Boolean'" class="param-value-input">
+                        <el-select
+                          v-model="row.value"
+                          placeholder="选择"
+                          size="small"
+                          class="param-select-with-btn"
+                          clearable
+                        >
+                          <el-option label="true" :value="true" />
+                          <el-option label="false" :value="false" />
+                        </el-select>
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showSkillVariableSelector($index, 'input')"><Link /></el-icon>
+                      </div>
+                      <!-- 整数类型 -->
+                      <div v-else-if="row.type === 'Integer'" class="param-value-input">
+                        <el-input-number
+                          v-model="row.value"
+                          :min="0"
+                          placeholder="输入数值"
+                          size="small"
+                          style="width: 100%"
+                          controls-position="right"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showSkillVariableSelector($index, 'input')"><Link /></el-icon>
+                      </div>
+                      <!-- File 类型 -->
+                      <div v-else-if="row.type && row.type.includes('File')" class="param-value-input file-input">
+                        <span v-if="row.value" class="file-value">{{ row.value }}</span>
+                        <span v-else class="file-placeholder">未选择文件</span>
+                        <div class="file-actions">
+                          <el-upload
+                            :show-file-list="false"
+                            accept=".xlsx,.xls,.txt,.csv"
+                            :before-upload="(file) => handleSkillFileUpload(file, $index)"
+                          >
+                            <el-icon class="action-icon upload-icon" title="上传文件"><Upload /></el-icon>
+                          </el-upload>
+                          <el-icon class="action-icon link-icon" title="关联节点输出" @click="showSkillVariableSelector($index, 'input')"><Link /></el-icon>
+                        </div>
+                      </div>
+                      <!-- 其他类型：输入框 + 关联选择 -->
+                      <div v-else class="param-value-input">
+                        <el-input
+                          v-model="row.value"
+                          placeholder="输入或引用参数值"
+                          size="small"
+                          class="param-input-with-btn"
+                        />
+                        <el-icon class="action-icon link-icon" title="关联节点输出" @click="showSkillVariableSelector($index, 'input')"><Link /></el-icon>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <!-- 额外添加的参数显示删除按钮 -->
+                  <el-table-column v-if="selectedNode.allowAddInputParams" label="" width="50" align="center">
+                    <template #default="{ row, $index }">
+                      <!-- 只对额外添加的参数（非必填且非原始参数）显示删除按钮 -->
+                      <el-button
+                        v-if="!row.required && row.isExtra"
+                        type="danger"
+                        text
+                        size="small"
+                        :icon="Delete"
+                        @click="removeSkillInputParam($index)"
+                      />
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+
+            <!-- 输出参数（只读） -->
+            <div class="io-section" v-if="selectedNode.outputParams && selectedNode.outputParams.length > 0">
+              <div class="io-section-header">
+                <el-icon class="expand-icon"><ArrowDown /></el-icon>
+                <span class="io-section-title">输出</span>
+                <span class="io-section-hint">（只读，可供后续节点引用）</span>
+              </div>
+              <div class="io-section-content">
+                <el-table
+                  :data="selectedNode.outputParams"
+                  size="small"
+                  class="io-table"
+                >
+                  <el-table-column label="变量名" min-width="150">
+                    <template #default="{ row }">
+                      <div class="param-name-cell">
+                        <span class="param-name-text">{{ row.name }}</span>
+                        <el-tooltip v-if="row.description" :content="row.description" placement="top" :show-after="300">
+                          <el-icon class="param-desc-icon"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="150" align="center">
+                    <template #default="{ row }">
+                      <span class="param-type-tag">{{ row.type || 'String' }}</span>
                     </template>
                   </el-table-column>
                 </el-table>
