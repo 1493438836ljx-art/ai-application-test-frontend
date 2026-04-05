@@ -97,6 +97,7 @@ export function useWorkflowSave(options = {}) {
               targetPort: innerConn.targetPort,
               sourceParamIndex: innerConn.sourceParamIndex,
               targetParamIndex: innerConn.targetParamIndex,
+              label: innerConn.label || null,
             })),
             leftPort: loopBodyData.leftPort || { id: 'port-left', name: '输入', type: 'input', y: 200, params: [] },
             rightPort: loopBodyData.rightPort || { id: 'port-right', name: '输出', type: 'output', y: 200, params: [] },
@@ -273,12 +274,14 @@ export function useWorkflowSave(options = {}) {
           if (response.connections && Array.isArray(response.connections)) {
             connections.value = response.connections.map((conn, index) => ({
               id: conn.connectionUuid || `conn-${Date.now() + index}`,
-              sourceId: nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
+              sourceId: conn.sourceNodeUuid || nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
               sourcePort: conn.sourcePortId,
-              targetId: nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
+              targetId: conn.targetNodeUuid || nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
               targetPort: conn.targetPortId,
               sourceParamIndex: conn.sourceParamIndex,
               targetParamIndex: conn.targetParamIndex,
+              label: conn.label || null,
+              branchLabel: conn.branchLabel || null,
               config: {}
             }))
           }

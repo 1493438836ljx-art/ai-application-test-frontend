@@ -101,6 +101,7 @@
           :marker-end="hoveredBodyConnection?.id === conn.id ? 'url(#arrowhead-body-hover)' : 'url(#arrowhead-body)'"
           @mouseenter="handleBodyConnectionMouseEnter(conn)"
           @mouseleave="handleBodyConnectionMouseLeave"
+          @contextmenu.prevent.stop="showBodyConnectionContextMenu(conn, $event)"
         />
         <!-- 临时连线 -->
         <path v-if="tempBodyConnection" :d="tempBodyConnection" class="temp-connection-path" />
@@ -122,6 +123,23 @@
           @click.stop="showAddNodeDialog(conn.targetId === leftPort.id ? leftPort : rightPort, conn.targetId === leftPort.id ? 'left' : 'right')"
         >
           <el-icon :size="12"><Plus /></el-icon>
+        </div>
+      </div>
+
+      <!-- 连线标签显示 -->
+      <div
+        v-for="conn in bodyConnections"
+        :key="'label-' + conn.id"
+      >
+        <div
+          v-if="conn.label && getBodyConnectionMidpoint(conn)"
+          class="connection-label"
+          :style="{
+            left: `${getBodyConnectionMidpoint(conn).x}px`,
+            top: `${getBodyConnectionMidpoint(conn).y}px`,
+          }"
+        >
+          {{ conn.label }}
         </div>
       </div>
     </div>
@@ -170,9 +188,9 @@
   <!-- 弹窗遮罩 -->
   <div v-if="showAddDialog" class="popover-overlay" @click="closeAddDialog" />
 
-  <!-- 右键菜单 -->
+  <!-- 右键菜单（节点） -->
   <div
-    v-if="bodyContextMenu.visible"
+    v-if="bodyContextMenu.visible && bodyContextMenu.node"
     class="context-menu"
     :style="{ left: `${bodyContextMenu.x}px`, top: `${bodyContextMenu.y}px` }"
   >
@@ -190,6 +208,45 @@
       <span>删除</span>
     </div>
   </div>
+
+  <!-- 右键菜单（连线） -->
+  <div
+    v-if="bodyContextMenu.visible && bodyContextMenu.connection"
+    class="context-menu"
+    :style="{ left: `${bodyContextMenu.x}px`, top: `${bodyContextMenu.y}px` }"
+  >
+    <div class="context-menu-item" @click="bodyConnectionMenuEditLabel">
+      <el-icon><Edit /></el-icon>
+      <span>{{ bodyContextMenu.connection?.label ? '编辑标签' : '添加标签' }}</span>
+    </div>
+    <div class="context-menu-divider" />
+    <div class="context-menu-item danger" @click="bodyConnectionMenuDelete">
+      <el-icon><Delete /></el-icon>
+      <span>删除连线</span>
+    </div>
+  </div>
+
+  <!-- 连线标签编辑对话框 -->
+  <el-dialog
+    v-model="connectionLabelDialog.visible"
+    title="编辑连线标签"
+    width="400px"
+    :close-on-click-modal="true"
+    align-center
+    append-to-body
+  >
+    <el-input
+      v-model="connectionLabelDialog.label"
+      placeholder="请输入标签内容"
+      maxlength="50"
+      show-word-limit
+      @keydown.enter="saveBodyConnectionLabel"
+    />
+    <template #footer>
+      <el-button @click="connectionLabelDialog.visible = false">取消</el-button>
+      <el-button type="primary" @click="saveBodyConnectionLabel">确定</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -245,6 +302,14 @@ const bodyContextMenu = reactive({
   x: 0,
   y: 0,
   node: null,
+  connection: null, // 连线右键菜单支持
+})
+
+// 连线标签编辑对话框
+const connectionLabelDialog = reactive({
+  visible: false,
+  label: '',
+  connection: null,
 })
 
 // 触发添加节点的源节点（点击节点输出端口时记录）
@@ -556,6 +621,7 @@ const showBodyContextMenu = (event, node) => {
 const hideBodyContextMenu = () => {
   bodyContextMenu.visible = false
   bodyContextMenu.node = null
+  bodyContextMenu.connection = null
 }
 
 // 右键菜单：重命名
@@ -717,6 +783,55 @@ const handleBodyConnectionMouseEnter = (conn) => {
     hoveredBodyConnectionTimer = null
   }
   hoveredBodyConnection.value = conn
+}
+
+// 显示连线右键菜单
+const showBodyConnectionContextMenu = (connection, event) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  hoveredBodyConnection.value = connection
+
+  bodyContextMenu.visible = true
+  bodyContextMenu.x = event.clientX
+  bodyContextMenu.y = event.clientY
+  bodyContextMenu.connection = connection
+  bodyContextMenu.node = null // 确保不是节点菜单
+
+  // 点击其他地方关闭菜单
+  document.addEventListener('click', hideBodyContextMenu, { once: true })
+}
+
+// 连线右键菜单：编辑标签
+const bodyConnectionMenuEditLabel = () => {
+  if (!bodyContextMenu.connection) return
+  connectionLabelDialog.connection = bodyContextMenu.connection
+  connectionLabelDialog.label = bodyContextMenu.connection.label || ''
+  connectionLabelDialog.visible = true
+  hideBodyContextMenu()
+}
+
+// 保存连线标签
+const saveBodyConnectionLabel = () => {
+  if (!connectionLabelDialog.connection) return
+  const connection = bodyConnections.value.find((c) => c.id === connectionLabelDialog.connection.id)
+  if (connection) {
+    connection.label = connectionLabelDialog.label.trim() || null
+    saveLoopBodyState()
+  }
+  connectionLabelDialog.visible = false
+  connectionLabelDialog.connection = null
+  connectionLabelDialog.label = ''
+}
+
+// 连线右键菜单：删除连线
+const bodyConnectionMenuDelete = () => {
+  if (!bodyContextMenu.connection) return
+  const connectionId = bodyContextMenu.connection.id
+  hideBodyContextMenu()
+  deleteBodyConnection(connectionId)
+  hoveredBodyConnection.value = null
+  ElMessage.success('已删除连线')
 }
 
 // 计算连线中点坐标
@@ -1140,6 +1255,22 @@ defineExpose({
   background: #06b6d4;
   transform: translate(-50%, -50%) scale(1.15);
   box-shadow: 0 4px 12px rgba(34, 211, 238, 0.5);
+}
+
+/* 循环体连线标签 */
+.connection-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #10b981;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 15;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
 .node-type-list {

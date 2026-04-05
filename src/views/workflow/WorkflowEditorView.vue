@@ -1118,6 +1118,7 @@ const saveWorkflow = async () => {
               targetPort: innerConn.targetPort,
               sourceParamIndex: innerConn.sourceParamIndex,
               targetParamIndex: innerConn.targetParamIndex,
+              label: innerConn.label || null,
             })),
             leftPort: loopBodyData.leftPort || { id: 'port-left', name: '输入', type: 'input', y: 200, params: [] },
             rightPort: loopBodyData.rightPort || { id: 'port-right', name: '输出', type: 'output', y: 200, params: [] },
@@ -1954,6 +1955,34 @@ const connectionMenuDelete = () => {
   selectedConnection.value = contextMenu.connection
   hideContextMenu()
   deleteSelectedConnection()
+}
+
+// 连线标签编辑对话框
+const connectionLabelDialog = reactive({
+  visible: false,
+  label: '',
+  connection: null,
+})
+
+// 连线右键菜单操作：编辑标签
+const connectionMenuEditLabel = () => {
+  if (!contextMenu.connection) return
+  connectionLabelDialog.connection = contextMenu.connection
+  connectionLabelDialog.label = contextMenu.connection.label || ''
+  connectionLabelDialog.visible = true
+  hideContextMenu()
+}
+
+// 保存连线标签
+const saveConnectionLabel = () => {
+  if (!connectionLabelDialog.connection) return
+  const connection = connections.value.find((c) => c.id === connectionLabelDialog.connection.id)
+  if (connection) {
+    connection.label = connectionLabelDialog.label.trim() || null
+  }
+  connectionLabelDialog.visible = false
+  connectionLabelDialog.connection = null
+  connectionLabelDialog.label = ''
 }
 
 // 自动调整节点布局
@@ -4903,12 +4932,14 @@ const loadWorkflowData = async () => {
         if (response.connections && Array.isArray(response.connections)) {
           connections.value = response.connections.map((conn, index) => ({
             id: conn.connectionUuid || `conn-${Date.now() + index}`,
-            sourceId: nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
+            sourceId: conn.sourceNodeUuid || nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
             sourcePort: conn.sourcePortId,
-            targetId: nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
+            targetId: conn.targetNodeUuid || nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
             targetPort: conn.targetPortId,
             sourceParamIndex: conn.sourceParamIndex,
             targetParamIndex: conn.targetParamIndex,
+            label: conn.label || null,
+            branchLabel: conn.branchLabel || null,
             config: {}
           }))
         }
@@ -5384,12 +5415,14 @@ onMounted(async () => {
           if (response.connections && Array.isArray(response.connections)) {
             connections.value = response.connections.map((conn, index) => ({
               id: conn.connectionUuid || `conn-${Date.now() + index}`,
-              sourceId: nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
+              sourceId: conn.sourceNodeUuid || nodeIdMap[conn.sourceNodeId] || conn.sourceNodeId,
               sourcePort: conn.sourcePortId,
-              targetId: nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
+              targetId: conn.targetNodeUuid || nodeIdMap[conn.targetNodeId] || conn.targetNodeId,
               targetPort: conn.targetPortId,
               sourceParamIndex: conn.sourceParamIndex,
               targetParamIndex: conn.targetParamIndex,
+              label: conn.label || null,
+              branchLabel: conn.branchLabel || null,
               config: {}
             }))
           }
@@ -5599,20 +5632,21 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 连线上的分支标签 -->
+          <!-- 连线上的标签（分支标签或用户自定义标签） -->
           <div
             v-for="conn in connections"
             :key="'label-' + conn.id"
           >
             <div
-              v-if="conn.branchLabel && getConnectionMidpoint(conn)"
-              class="connection-branch-label"
+              v-if="(conn.branchLabel || conn.label) && getConnectionMidpoint(conn)"
+              class="connection-label"
+              :class="{ 'user-label': conn.label && !conn.branchLabel }"
               :style="{
                 left: `${getConnectionMidpoint(conn).x}px`,
                 top: `${getConnectionMidpoint(conn).y}px`,
               }"
             >
-              {{ conn.branchLabel }}
+              {{ conn.label || conn.branchLabel }}
             </div>
           </div>
 
@@ -5967,12 +6001,37 @@ onUnmounted(() => {
             <el-icon><Plus /></el-icon>
             <span>添加节点</span>
           </div>
+          <div class="context-menu-item" @click="connectionMenuEditLabel">
+            <el-icon><Edit /></el-icon>
+            <span>{{ contextMenu.connection?.label ? '编辑标签' : '添加标签' }}</span>
+          </div>
           <div class="context-menu-divider" />
           <div class="context-menu-item danger" @click="connectionMenuDelete">
             <el-icon><Delete /></el-icon>
             <span>删除</span>
           </div>
         </div>
+
+        <!-- 连线标签编辑对话框 -->
+        <el-dialog
+          v-model="connectionLabelDialog.visible"
+          title="编辑连线标签"
+          width="400px"
+          :close-on-click-modal="true"
+          align-center
+        >
+          <el-input
+            v-model="connectionLabelDialog.label"
+            placeholder="请输入标签内容"
+            maxlength="50"
+            show-word-limit
+            @keydown.enter="saveConnectionLabel"
+          />
+          <template #footer>
+            <el-button @click="connectionLabelDialog.visible = false">取消</el-button>
+            <el-button type="primary" @click="saveConnectionLabel">确定</el-button>
+          </template>
+        </el-dialog>
 
         <!-- 调试日志弹窗 -->
         <el-dialog
@@ -8026,8 +8085,8 @@ onUnmounted(() => {
   box-shadow: 0 4px 12px rgba(34, 211, 238, 0.5);
 }
 
-/* 连线分支标签 */
-.connection-branch-label {
+/* 连线标签（分支标签或用户自定义标签） */
+.connection-label {
   position: absolute;
   transform: translate(-50%, -50%);
   background: #6366f1;
@@ -8040,6 +8099,12 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 20;
   box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+}
+
+/* 用户自定义标签样式 */
+.connection-label.user-label {
+  background: #10b981;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
 .flow-node {
