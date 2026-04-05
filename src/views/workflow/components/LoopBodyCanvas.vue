@@ -199,6 +199,8 @@ import { Plus, Close, Edit, CopyDocument, Delete } from '@element-plus/icons-vue
 import LoopBodyPort from './LoopBodyPort.vue'
 import FlowNode from './FlowNode.vue'
 import { useLoopBody } from '../composables/useLoopBody'
+import { getSkillDetail } from '@/api/skill.js'
+import { generateUuid } from '../utils/uuid'
 
 const props = defineProps({
   loopBodyNode: {
@@ -812,8 +814,15 @@ const getBodyConnectionCoordinates = (connection) => {
 }
 
 // 添加选中的节点类型
-const addSelectedNodeType = (type) => {
+const addSelectedNodeType = async (type) => {
   console.log('Adding node type:', type)
+
+  // 处理 Skill 节点
+  if (type.type.startsWith('skill-')) {
+    await addSkillNodeToBody(type)
+    return
+  }
+
   const newNode = addBodyNode(type.type, { name: type.name, ...type })
   console.log('New node created:', newNode)
   console.log('Body nodes value:', bodyNodes.value)
@@ -903,6 +912,114 @@ const addSelectedNodeType = (type) => {
       triggerSourceNode.value = null
     }
   })
+}
+
+// 添加 Skill 节点到循环体
+const addSkillNodeToBody = async (type) => {
+  const skillId = type.type.replace('skill-', '')
+
+  try {
+    const skillDetail = await getSkillDetail(skillId)
+    if (!skillDetail) {
+      ElMessage.error('获取 Skill 详情失败')
+      return
+    }
+
+    // 计算 Skill 节点位置
+    let nodeX = 160
+    let nodeY = 100 + bodyNodes.value.length * 120
+
+    // 如果有触发连线，使用连线中点
+    if (triggerConnection.value) {
+      const midpoint = getBodyConnectionMidpoint(triggerConnection.value)
+      if (midpoint) {
+        nodeX = midpoint.x - 110 - loopBodyCanvas.offsetX // 居中
+        nodeY = midpoint.y - 35 - loopBodyCanvas.offsetY
+      }
+    }
+
+    // 创建 Skill 节点对象
+    const newNode = {
+      id: `skill-${Date.now()}`,
+      nodeUuid: generateUuid(),
+      type: 'skill',
+      nodeCategory: 'EXECUTION',
+      name: skillDetail.name,
+      description: skillDetail.description || '',
+      skillId: skillId,
+      allowAddInputParams: skillDetail.allowAddInputParams || false,
+      allowAddOutputParams: skillDetail.allowAddOutputParams || false,
+      skillSnapshot: JSON.stringify({
+        id: skillDetail.id,
+        name: skillDetail.name,
+        description: skillDetail.description || '',
+        inputParameters: skillDetail.inputParameters || [],
+        outputParameters: skillDetail.outputParameters || [],
+      }),
+      inputParams: (skillDetail.inputParameters || []).map((p) => ({
+        name: p.paramName,
+        type: p.paramType,
+        required: p.required,
+        description: p.description,
+        defaultValue: p.defaultValue,
+        valueSourceType: 'literal',
+        value: p.defaultValue ?? '',
+      })),
+      outputParams: (skillDetail.outputParameters || []).map((p) => ({
+        name: p.paramName,
+        type: p.paramType,
+        description: p.description,
+      })),
+      x: nodeX,
+      y: nodeY,
+      inputs: [{ id: `in-${Date.now()}`, name: '输入', type: 'Any' }],
+      outputs: [{ id: `out-${Date.now()}`, name: '输出', type: 'Any' }],
+      config: {},
+    }
+
+    // 添加节点到循环体
+    bodyNodes.value.push(newNode)
+    showAddDialog.value = false
+    selectedBodyNode.value = newNode
+    ElMessage.success(`已添加技能节点: ${skillDetail.name}`)
+
+    // 保存状态
+    saveLoopBodyState()
+
+    // 处理连线逻辑
+    nextTick(() => {
+      if (triggerConnection.value) {
+        const conn = triggerConnection.value
+        deleteBodyConnection(conn.id)
+
+        createBodyConnection(conn.sourceId, newNode.id, conn.sourcePort, 'in-1')
+        createBodyConnection(newNode.id, conn.targetId, 'out-1', conn.targetPort)
+
+        triggerConnection.value = null
+        triggerPortType.value = null
+        return
+      }
+
+      // 自动连线逻辑
+      if (bodyNodes.value.length === 1 && triggerPortType.value) {
+        if (triggerPortType.value === 'left') {
+          createBodyConnection(leftPort.id, newNode.id, leftPort.id, 'in-1')
+        } else if (triggerPortType.value === 'right') {
+          createBodyConnection(newNode.id, rightPort.id, 'out-1', rightPort.id)
+        }
+        triggerPortType.value = null
+      }
+
+      if (triggerPortType.value === 'output' && triggerSourceNode.value) {
+        createBodyConnection(triggerSourceNode.value.id, newNode.id, 'out-1', 'in-1')
+        triggerPortType.value = null
+        triggerSourceNode.value = null
+      }
+    })
+  } catch (error) {
+    console.error('添加 Skill 节点失败:', error)
+    ElMessage.error('系统服务异常！')
+  }
 }
 
 // 暴露方法
