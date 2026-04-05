@@ -36,6 +36,8 @@ import {
   Cpu,
   FolderAdd,
   Refresh,
+  WarningFilled,
+  Download,
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/chat/AiChat.vue'
 import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
@@ -56,9 +58,10 @@ import { generateUuid } from './utils/uuid'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
 import { getSkillList, getSkillDetail } from '@/api/skill.js'
-import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow } from '@/api/workflow.js'
+import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow, executeWorkflow, getExecutionDetail } from '@/api/workflow.js'
 import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
 import { getDictionaryColumnsByName } from '@/api/dictionary.js'
+import { uploadFile } from '@/api/file.js'
 import { marked } from 'marked'
 
 const route = useRoute()
@@ -245,6 +248,9 @@ const getTypeValue = (param) => {
 
 // 处理级联选择器值变化
 const handleTypeChange = (value, row) => {
+  // 类型切换时清空默认值，避免类型不匹配
+  row.defaultValue = undefined
+
   if (!value || value.length === 0) {
     row.type = 'String'
     row.elementType = undefined
@@ -291,112 +297,14 @@ const iconComponents = {
   Refresh,
 }
 
+// 加载状态
+const isLoading = ref(true)
+
 // 节点列表
-const nodes = ref([
-  {
-    id: 'start-1',
-    type: 'start',
-    name: '开始',
-    x: 100,
-    y: 300,
-    inputs: [],
-    outputs: [{ id: 'out-1', name: '输出' }],
-    outputParams: [{ name: 'input', type: 'String', elementType: 'string' }],
-    inputParams: [],
-    config: {},
-  },
-  {
-    id: 'tableExtract-1',
-    type: 'tableExtract',
-    name: '表格提取',
-    x: 380,
-    y: 300,
-    inputs: [{ id: 'in-te-1', name: '输入' }],
-    outputs: [{ id: 'out-te-1', name: '输出' }],
-    outputParams: [{ name: 'column1', type: 'String' }],
-    config: {},
-  },
-  {
-    id: 'textClean-1',
-    type: 'textClean',
-    name: '文本清洗',
-    x: 660,
-    y: 300,
-    inputs: [{ id: 'in-tc-1', name: '输入' }],
-    outputs: [{ id: 'out-tc-1', name: '输出' }],
-    config: {},
-  },
-  {
-    id: 'envConnect-1',
-    type: 'envConnect',
-    name: '环境对接',
-    x: 940,
-    y: 300,
-    inputs: [{ id: 'in-env-1', name: '输入' }],
-    outputs: [{ id: 'out-env-1', name: '输出' }],
-    config: {},
-  },
-  {
-    id: 'apiAuto-1',
-    type: 'apiAuto',
-    name: 'HTTPS/HTTP接口调用',
-    x: 1220,
-    y: 300,
-    inputs: [{ id: 'in-api-1', name: '输入' }],
-    outputs: [{ id: 'out-api-1', name: '输出' }],
-    config: {},
-  },
-  {
-    id: 'judgeModel-1',
-    type: 'judgeModel',
-    name: '裁判模型',
-    x: 1500,
-    y: 300,
-    inputs: [{ id: 'in-jm-1', name: '输入' }],
-    outputs: [{ id: 'out-jm-1', name: '输出' }],
-    config: {
-      modelValue: 'DeepSeekR1-32B',
-      promptValue: '',
-      toEvaluateType: 'String',
-      toEvaluateValue: '',
-      refType: 'String',
-      refValue: '',
-    },
-  },
-  {
-    id: 'tableGenerate-1',
-    type: 'tableGenerate',
-    name: '表格生成',
-    x: 1780,
-    y: 300,
-    inputs: [{ id: 'in-tg-1', name: '输入' }],
-    outputs: [{ id: 'out-tg-1', name: '输出' }],
-    config: {
-      inputParams: [],
-    },
-  },
-  {
-    id: 'end-1',
-    type: 'end',
-    name: '结束',
-    x: 2060,
-    y: 300,
-    inputs: [{ id: 'in-1', name: '输入' }],
-    outputs: [],
-    config: {},
-  },
-])
+const nodes = ref([])
 
 // 连线列表
-const connections = ref([
-  { id: 'conn-1', sourceId: 'start-1', sourcePort: 'out-1', targetId: 'tableExtract-1', targetPort: 'in-te-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-2', sourceId: 'tableExtract-1', sourcePort: 'out-te-1', targetId: 'textClean-1', targetPort: 'in-tc-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-3', sourceId: 'textClean-1', sourcePort: 'out-tc-1', targetId: 'envConnect-1', targetPort: 'in-env-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-4', sourceId: 'envConnect-1', sourcePort: 'out-env-1', targetId: 'apiAuto-1', targetPort: 'in-api-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-5', sourceId: 'apiAuto-1', sourcePort: 'out-api-1', targetId: 'judgeModel-1', targetPort: 'in-jm-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-6', sourceId: 'judgeModel-1', sourcePort: 'out-jm-1', targetId: 'tableGenerate-1', targetPort: 'in-tg-1', sourceParamIndex: 0, targetParamIndex: 0 },
-  { id: 'conn-7', sourceId: 'tableGenerate-1', sourcePort: 'out-tg-1', targetId: 'end-1', targetPort: 'in-1', sourceParamIndex: 0, targetParamIndex: 0 },
-])
+const connections = ref([])
 
 // 关联线（循环节点与循环体画布之间的虚线关联）
 const associations = ref([])
@@ -1062,6 +970,26 @@ const saveWorkflow = async () => {
 
   saveState.isSaving = true
   try {
+    // 处理开始节点中的待上传文件
+    const startNode = nodes.value.find((n) => n.type === 'start')
+    if (startNode && startNode.outputParams) {
+      for (const param of startNode.outputParams) {
+        if (param.type === 'File' && param.pendingFile) {
+          try {
+            const result = await uploadFile(param.pendingFile)
+            param.defaultValue = result.fileId
+            param.defaultFileName = result.fileName
+            param.pendingFile = null
+          } catch (error) {
+            console.error('文件上传失败:', error)
+            ElMessage.error(`文件 "${param.name}" 上传失败`)
+            saveState.isSaving = false
+            return
+          }
+        }
+      }
+    }
+
     // 构建节点数据（转换为后端格式）
     const nodesData = nodes.value.map((node) => {
       // 基础节点数据
@@ -1191,7 +1119,7 @@ const saveWorkflow = async () => {
 }
 
 // 运行工作流
-const runWorkflow = () => {
+const runWorkflow = async () => {
   runState.isRunning = true
   runState.logs = []
   runState.currentStep = 0
@@ -1209,35 +1137,159 @@ const runWorkflow = () => {
     return
   }
 
-  addRunLog('info', '正在初始化工作流...')
+  // 收集开始节点定义的输入参数
+  const inputParams = startNode.outputParams || []
+  const inputData = {}
 
-  // 模拟运行过程
-  let delay = 500
-  nodes.value.forEach((node, index) => {
-    setTimeout(() => {
-      runState.currentStep = index + 1
-      addRunLog('info', `正在执行节点 [${index + 1}/${nodes.value.length}]: ${node.name}`)
-
-      // 模拟每个节点的执行
-      setTimeout(() => {
-        if (node.type === 'start') {
-          addRunLog('success', '开始节点初始化完成')
-        } else if (node.type === 'end') {
-          addRunLog('success', '工作流执行完成')
-          workflow.hasRun = true
-        } else {
-          addRunLog('success', `节点 "${node.name}" 执行成功`)
-        }
-      }, 300)
-    }, delay)
-    delay += 800
+  // 先收集有默认值的参数
+  inputParams.forEach((param) => {
+    if (param.defaultValue !== undefined && param.defaultValue !== null && param.defaultValue !== '') {
+      inputData[param.name] = param.defaultValue
+    }
   })
 
-  // 运行完成后保持面板显示
-  setTimeout(() => {
+  // 如果有必填且没有默认值的参数，弹出对话框让用户输入
+  if (inputParams.length > 0) {
+    const requiredParamsWithoutDefault = inputParams.filter((p) => p.required && (p.defaultValue === undefined || p.defaultValue === null || p.defaultValue === ''))
+    if (requiredParamsWithoutDefault.length > 0) {
+      // 检查是否有文件类型参数
+      const fileParams = requiredParamsWithoutDefault.filter((p) => p.type === 'File')
+      const nonFileParams = requiredParamsWithoutDefault.filter((p) => p.type !== 'File')
+
+      // 处理非文件类型参数
+      if (nonFileParams.length > 0) {
+        try {
+          const paramPromises = nonFileParams.map((param) => {
+            return ElMessageBox.prompt(`请输入参数 "${param.name}" (${param.type || 'String'})`, '运行参数', {
+              confirmButtonText: '确定',
+              cancelButtonText: '取消',
+              inputPattern: param.type === 'Integer' ? /^\d+$/ : /.*/,
+              inputErrorMessage: param.type === 'Integer' ? '请输入整数' : '请输入值',
+            })
+              .then(({ value }) => {
+                inputData[param.name] = param.type === 'Integer' ? parseInt(value, 10) : value
+              })
+              .catch(() => {
+                throw new Error('用户取消输入')
+              })
+          })
+
+          await Promise.all(paramPromises)
+        } catch (error) {
+          if (error.message === '用户取消输入') {
+            addRunLog('warning', '用户取消了运行')
+            runState.isRunning = false
+            return
+          }
+        }
+      }
+
+      // 处理文件类型参数
+      if (fileParams.length > 0) {
+        pendingFileParams.value = fileParams.map((p) => ({
+          ...p,
+          uploadedFile: null,
+        }))
+        runtimeInputData.value = { ...inputData }
+        fileUploadRefs.value = {}
+        fileUploadDialogVisible.value = true
+        return // 等待用户确认文件上传后继续执行
+      }
+    }
+  }
+
+  addRunLog('info', '正在提交到后端执行...')
+
+  try {
+    // 调用后端执行API
+    const executionId = await executeWorkflow(workflow.id, inputData, 'manual')
+    addRunLog('success', `执行任务已提交，执行ID: ${executionId}`)
+
+    // 轮询执行状态
+    let completed = false
+    let pollCount = 0
+    const maxPolls = 60 // 最多轮询60次（约30秒）
+
+    while (!completed && pollCount < maxPolls) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      pollCount++
+
+      const execution = await getExecutionDetail(executionId)
+
+      if (execution.status === 'SUCCESS') {
+        completed = true
+        addRunLog('success', '工作流执行成功')
+
+        // 解析节点执行详情
+        if (execution.nodeExecutions) {
+          const nodeExecMap =
+            typeof execution.nodeExecutions === 'string'
+              ? JSON.parse(execution.nodeExecutions)
+              : execution.nodeExecutions
+
+          for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+            const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+            if (node) {
+              if (nodeExec.status === 'SUCCESS') {
+                addRunLog('success', `节点 "${node.name}" 执行成功`)
+              } else if (nodeExec.status === 'FAILED') {
+                addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+              }
+            }
+          }
+        }
+
+        workflow.hasRun = true
+        runState.currentStep = runState.totalSteps
+        ElMessage.success('工作流运行成功')
+      } else if (execution.status === 'FAILED') {
+        completed = true
+        addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+        ElMessage.error('工作流运行失败')
+      } else if (execution.status === 'PARTIAL_SUCCESS') {
+        completed = true
+        addRunLog('warning', '工作流部分执行成功')
+
+        // 解析节点执行详情
+        if (execution.nodeExecutions) {
+          const nodeExecMap =
+            typeof execution.nodeExecutions === 'string'
+              ? JSON.parse(execution.nodeExecutions)
+              : execution.nodeExecutions
+
+          for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+            const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+            if (node) {
+              if (nodeExec.status === 'SUCCESS') {
+                addRunLog('success', `节点 "${node.name}" 执行成功`)
+              } else if (nodeExec.status === 'FAILED') {
+                addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+              }
+            }
+          }
+        }
+
+        workflow.hasRun = true
+        ElMessage.warning('工作流部分执行成功')
+      }
+
+      // 更新进度
+      runState.currentStep = Math.min(
+        Math.floor((pollCount / maxPolls) * runState.totalSteps),
+        runState.totalSteps - 1
+      )
+    }
+
+    if (!completed) {
+      addRunLog('warning', '执行超时，请稍后刷新查看结果')
+      ElMessage.warning('执行超时')
+    }
+  } catch (error) {
+    addRunLog('error', `执行失败: ${error.message || '系统服务异常'}`)
+    ElMessage.error('系统服务异常！')
+  } finally {
     runState.isRunning = false
-    ElMessage.success('工作流运行成功')
-  }, delay + 500)
+  }
 }
 
 // 发布工作流
@@ -1465,6 +1517,123 @@ const newNodeName = ref('')
 const renamingNode = ref(null)  // 保存正在重命名的节点引用
 const isEditingNodeName = ref(false)
 const editingNodeName = ref('')
+
+// 文件上传对话框（运行时使用）
+const fileUploadDialogVisible = ref(false)
+const pendingFileParams = ref([])
+const fileUploadRefs = ref({})
+const runtimeInputData = ref({})
+
+// 设置文件上传组件引用
+const setFileUploadRef = (el, index) => {
+  if (el) {
+    fileUploadRefs.value[index] = el
+  }
+}
+
+// 处理运行时文件选择
+const handleRuntimeFileChange = (file, param) => {
+  param.uploadedFile = file.raw
+}
+
+// 清除运行时文件
+const clearRuntimeFile = (param) => {
+  param.uploadedFile = null
+}
+
+// 取消文件上传
+const cancelFileUpload = () => {
+  fileUploadDialogVisible.value = false
+  pendingFileParams.value = []
+  runtimeInputData.value = {}
+  runState.isRunning = false
+  addRunLog('warning', '用户取消了运行')
+}
+
+// 确认文件上传
+const confirmFileUpload = async () => {
+  // 检查是否所有必填文件都已上传
+  for (const param of pendingFileParams.value) {
+    if (param.required && !param.uploadedFile) {
+      ElMessage.error(`请上传必填参数 "${param.name}" 的文件`)
+      return
+    }
+  }
+
+  // 上传文件并收集文件ID
+  for (const param of pendingFileParams.value) {
+    if (param.uploadedFile) {
+      try {
+        const result = await uploadFile(param.uploadedFile)
+        runtimeInputData.value[param.name] = result.fileId
+      } catch (error) {
+        console.error('文件上传失败:', error)
+        ElMessage.error(`文件 "${param.name}" 上传失败`)
+        return
+      }
+    }
+  }
+
+  fileUploadDialogVisible.value = false
+
+  // 继续执行工作流
+  addRunLog('info', '正在提交到后端执行...')
+  try {
+    const executionId = await executeWorkflow(workflow.id, runtimeInputData.value, 'manual')
+    addRunLog('success', `执行任务已提交，执行ID: ${executionId}`)
+
+    // 轮询执行状态
+    let completed = false
+    let pollCount = 0
+    const maxPolls = 60
+
+    while (!completed && pollCount < maxPolls) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      pollCount++
+
+      const execution = await getExecutionDetail(executionId)
+
+      if (execution.status === 'SUCCESS') {
+        completed = true
+        addRunLog('success', '工作流执行成功')
+
+        if (execution.nodeExecutions) {
+          const nodeExecMap =
+            typeof execution.nodeExecutions === 'string'
+              ? JSON.parse(execution.nodeExecutions)
+              : execution.nodeExecutions
+
+          for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+            const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+            if (node) {
+              if (nodeExec.status === 'SUCCESS') {
+                addRunLog('success', `节点 "${node.name}" 执行成功`)
+              } else if (nodeExec.status === 'FAILED') {
+                addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+              }
+            }
+          }
+        }
+
+        if (execution.outputs) {
+          addRunLog('info', `输出结果: ${JSON.stringify(execution.outputs)}`)
+        }
+      } else if (execution.status === 'FAILED') {
+        completed = true
+        addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+      }
+    }
+
+    if (!completed) {
+      addRunLog('warning', '执行超时，请稍后查看执行结果')
+    }
+  } catch (error) {
+    console.error('执行工作流失败:', error)
+    addRunLog('error', '系统服务异常！')
+  } finally {
+    runState.isRunning = false
+  }
+}
 
 // 调试状态
 const debugState = reactive({
@@ -2440,9 +2609,11 @@ const addOutputParam = () => {
   }
   selectedNode.value.outputParams.push({
     name: '',
-    type: 'string',
-    elementType: 'string',
+    type: 'String',
+    elementType: undefined,
+    fileType: undefined,
     required: false,
+    defaultValue: undefined,
   })
 }
 
@@ -2450,6 +2621,21 @@ const addOutputParam = () => {
 const removeOutputParam = (index) => {
   if (!selectedNode.value || !selectedNode.value.outputParams) return
   selectedNode.value.outputParams.splice(index, 1)
+}
+
+// 处理开始节点文件选择
+const handleStartNodeFileChange = (file, row) => {
+  // 存储文件对象，等待上传
+  row.pendingFile = file.raw
+  row.defaultFileName = file.name
+  row.defaultValue = file.name // 临时显示文件名
+}
+
+// 清除开始节点文件
+const clearStartNodeFile = (row) => {
+  row.pendingFile = null
+  row.defaultFileName = ''
+  row.defaultValue = ''
 }
 
 // 添加循环节点输出参数
@@ -5474,6 +5660,9 @@ onMounted(async () => {
     }
   }
 
+  // 加载完成，关闭加载状态
+  isLoading.value = false
+
   // 等待 DOM 准备好后触发连线重新计算
   await nextTick()
   // 通过微调 connections 数组来触发重新渲染
@@ -5539,7 +5728,7 @@ onUnmounted(() => {
     </div>
 
     <div class="editor-content">
-      <div ref="canvasContainerRef" class="canvas-container" :class="{ dragging: canvasDragState.isDragging, 'drawing-connection': drawingConnection }" @click="handleCanvasClick" @mousedown="startDragCanvas" @wheel.prevent="handleWheel">
+      <div ref="canvasContainerRef" class="canvas-container" :class="{ dragging: canvasDragState.isDragging, 'drawing-connection': drawingConnection }" @click="handleCanvasClick" @mousedown="startDragCanvas" @wheel.prevent="handleWheel" v-loading="isLoading" element-loading-text="加载中...">
         <div
           ref="canvasRef"
           class="canvas"
@@ -6348,6 +6537,81 @@ onUnmounted(() => {
                 <el-table-column label="必填" width="80" align="center">
                   <template #default="{ row }">
                     <el-switch v-model="row.required" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="默认值" min-width="160">
+                  <template #default="{ row }">
+                    <!-- String 类型 -->
+                    <el-input
+                      v-if="row.type === 'String' || !row.type"
+                      v-model="row.defaultValue"
+                      placeholder="请输入默认值"
+                      size="small"
+                      clearable
+                    />
+                    <!-- Boolean 类型 -->
+                    <el-switch
+                      v-else-if="row.type === 'Boolean'"
+                      v-model="row.defaultValue"
+                      active-text="true"
+                      inactive-text="false"
+                    />
+                    <!-- Integer 类型 -->
+                    <el-input-number
+                      v-else-if="row.type === 'Integer'"
+                      v-model="row.defaultValue"
+                      :min="0"
+                      controls-position="right"
+                      size="small"
+                      style="width: 100%"
+                    />
+                    <!-- Object 类型 -->
+                    <el-input
+                      v-else-if="row.type === 'Object'"
+                      v-model="row.defaultValue"
+                      type="textarea"
+                      :rows="2"
+                      placeholder='{"key": "value"}'
+                      size="small"
+                    />
+                    <!-- Times 类型 -->
+                    <el-date-picker
+                      v-else-if="row.type === 'Times'"
+                      v-model="row.defaultValue"
+                      type="datetime"
+                      placeholder="选择时间"
+                      size="small"
+                      style="width: 100%"
+                      value-format="YYYY-MM-DD HH:mm:ss"
+                    />
+                    <!-- File 类型 - 文件上传 -->
+                    <div v-else-if="row.type === 'File'" class="file-upload-wrapper">
+                      <el-upload
+                        ref="startNodeFileUploadRef"
+                        class="file-upload"
+                        :auto-upload="false"
+                        :show-file-list="false"
+                        :on-change="(file) => handleStartNodeFileChange(file, row)"
+                      >
+                        <template #trigger>
+                          <el-button type="primary" size="small" :icon="Upload">
+                            {{ row.defaultValue ? '更换文件' : '上传文件' }}
+                          </el-button>
+                        </template>
+                      </el-upload>
+                      <div v-if="row.defaultValue" class="file-info">
+                        <el-icon><Document /></el-icon>
+                        <span class="file-name">{{ row.defaultFileName || row.defaultValue }}</span>
+                        <el-button type="danger" text size="small" :icon="Delete" @click="clearStartNodeFile(row)" />
+                      </div>
+                    </div>
+                    <!-- Array/Dictionary 类型 - 不支持默认值 -->
+                    <div v-else class="default-value-hint">
+                      <el-icon><WarningFilled /></el-icon>
+                      <span>{{
+                        row.type === 'Array' ? '数组类型' : '字典类型'
+                      }}不支持默认值</span>
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" width="60" align="center">
@@ -7896,6 +8160,48 @@ onUnmounted(() => {
         <el-button type="primary" @click="confirmRename">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 文件上传对话框（运行时使用） -->
+    <el-dialog
+      v-model="fileUploadDialogVisible"
+      title="上传运行参数文件"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <div class="file-upload-dialog-content">
+        <div v-for="(param, index) in pendingFileParams" :key="index" class="file-param-item">
+          <label class="file-param-label">
+            <span class="param-name">{{ param.name }}</span>
+            <span class="param-type">({{ param.fileType || 'File' }})</span>
+            <el-tag v-if="param.required" type="danger" size="small">必填</el-tag>
+          </label>
+          <div class="file-param-upload">
+            <el-upload
+              :ref="(el) => setFileUploadRef(el, index)"
+              class="file-uploader"
+              :auto-upload="false"
+              :show-file-list="false"
+              :on-change="(file) => handleRuntimeFileChange(file, param)"
+            >
+              <template #trigger>
+                <el-button type="primary" size="small" :icon="Upload">
+                  {{ param.uploadedFile ? '更换文件' : '选择文件' }}
+                </el-button>
+              </template>
+            </el-upload>
+            <div v-if="param.uploadedFile" class="uploaded-file-info">
+              <el-icon><Document /></el-icon>
+              <span>{{ param.uploadedFile.name }}</span>
+              <el-button type="danger" text size="small" :icon="Delete" @click="clearRuntimeFile(param)" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="cancelFileUpload">取消</el-button>
+        <el-button type="primary" @click="confirmFileUpload">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -8574,6 +8880,106 @@ onUnmounted(() => {
 .config-item .el-select,
 .config-item .el-textarea {
   width: 100%;
+}
+
+/* 默认值提示样式 */
+.default-value-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.default-value-hint .el-icon {
+  font-size: 14px;
+}
+
+/* 文件上传样式 */
+.file-upload-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-upload-wrapper .file-upload {
+  width: 100%;
+}
+
+.file-upload-wrapper .file-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #f0f9ff;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #0369a1;
+}
+
+.file-upload-wrapper .file-info .file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 文件上传对话框样式 */
+.file-upload-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.file-param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.file-param-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.file-param-label .param-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.file-param-label .param-type {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.file-param-upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.uploaded-file-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #ecfdf5;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #059669;
+}
+
+.uploaded-file-info span {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 简单条件分支配置样式 */

@@ -1,5 +1,6 @@
 import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { executeWorkflow, getExecutionDetail } from '@/api/workflow'
 
 /**
  * 工作流执行功能 Composable
@@ -64,7 +65,7 @@ export function useWorkflowExecution(options = {}) {
   }
 
   // 运行工作流
-  const runWorkflow = () => {
+  const runWorkflow = async () => {
     runState.isRunning = true
     runState.logs = []
     runState.currentStep = 0
@@ -82,35 +83,98 @@ export function useWorkflowExecution(options = {}) {
       return
     }
 
-    addRunLog('info', '正在初始化工作流...')
+    addRunLog('info', '正在提交到后端执行...')
 
-    // 模拟运行过程
-    let delay = 500
-    nodes.value.forEach((node, index) => {
-      setTimeout(() => {
-        runState.currentStep = index + 1
-        addRunLog('info', `正在执行节点 [${index + 1}/${nodes.value.length}]: ${node.name}`)
+    try {
+      // 调用后端执行API
+      const executionId = await executeWorkflow(workflow.id, {}, 'manual')
+      addRunLog('success', `执行任务已提交，执行ID: ${executionId}`)
 
-        // 模拟每个节点的执行
-        setTimeout(() => {
-          if (node.type === 'start') {
-            addRunLog('success', '开始节点初始化完成')
-          } else if (node.type === 'end') {
-            addRunLog('success', '工作流执行完成')
-            workflow.hasRun = true
-          } else {
-            addRunLog('success', `节点 "${node.name}" 执行成功`)
+      // 轮询执行状态
+      let completed = false
+      let pollCount = 0
+      const maxPolls = 60 // 最多轮询60次（约30秒）
+
+      while (!completed && pollCount < maxPolls) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        pollCount++
+
+        const execution = await getExecutionDetail(executionId)
+
+        if (execution.status === 'SUCCESS') {
+          completed = true
+          addRunLog('success', '工作流执行成功')
+
+          // 解析节点执行详情
+          if (execution.nodeExecutions) {
+            const nodeExecMap =
+              typeof execution.nodeExecutions === 'string'
+                ? JSON.parse(execution.nodeExecutions)
+                : execution.nodeExecutions
+
+            for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+              const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+              if (node) {
+                if (nodeExec.status === 'SUCCESS') {
+                  addRunLog('success', `节点 "${node.name}" 执行成功`)
+                } else if (nodeExec.status === 'FAILED') {
+                  addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+                }
+              }
+            }
           }
-        }, 300)
-      }, delay)
-      delay += 800
-    })
 
-    // 运行完成后保持面板显示
-    setTimeout(() => {
+          workflow.hasRun = true
+          runState.currentStep = runState.totalSteps
+          ElMessage.success('工作流运行成功')
+        } else if (execution.status === 'FAILED') {
+          completed = true
+          addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+          ElMessage.error('工作流运行失败')
+        } else if (execution.status === 'PARTIAL_SUCCESS') {
+          completed = true
+          addRunLog('warning', '工作流部分执行成功')
+
+          // 解析节点执行详情
+          if (execution.nodeExecutions) {
+            const nodeExecMap =
+              typeof execution.nodeExecutions === 'string'
+                ? JSON.parse(execution.nodeExecutions)
+                : execution.nodeExecutions
+
+            for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+              const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+              if (node) {
+                if (nodeExec.status === 'SUCCESS') {
+                  addRunLog('success', `节点 "${node.name}" 执行成功`)
+                } else if (nodeExec.status === 'FAILED') {
+                  addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+                }
+              }
+            }
+          }
+
+          workflow.hasRun = true
+          ElMessage.warning('工作流部分执行成功')
+        }
+
+        // 更新进度
+        runState.currentStep = Math.min(
+          Math.floor((pollCount / maxPolls) * runState.totalSteps),
+          runState.totalSteps - 1
+        )
+      }
+
+      if (!completed) {
+        addRunLog('warning', '执行超时，请稍后刷新查看结果')
+        ElMessage.warning('执行超时')
+      }
+    } catch (error) {
+      addRunLog('error', `执行失败: ${error.message || '系统服务异常'}`)
+      ElMessage.error('系统服务异常！')
+    } finally {
       runState.isRunning = false
-      ElMessage.success('工作流运行成功')
-    }, delay + 500)
+    }
   }
 
   // 运行工作流（带日志）

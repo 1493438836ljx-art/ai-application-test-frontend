@@ -114,6 +114,59 @@ export async function saveWorkflowData(id, data) {
   return post(`${BASE_URL}/${id}/data/json`, data)
 }
 
+// ==================== 工作流执行 ====================
+
+/**
+ * 执行工作流
+ * @param {number|string} id - 工作流ID
+ * @param {Object} [inputData={}] - 输入参数
+ * @param {string} [triggeredBy='manual'] - 触发人
+ * @returns {Promise<number>} 执行记录ID
+ */
+export async function executeWorkflow(id, inputData = {}, triggeredBy = 'manual') {
+  return post(`${BASE_URL}/${id}/execute?triggeredBy=${triggeredBy}`, inputData)
+}
+
+/**
+ * 获取执行记录详情
+ * @param {number|string} executionId - 执行记录ID
+ * @returns {Promise<Object>} 执行记录详情
+ */
+export async function getExecutionDetail(executionId) {
+  return get(`${BASE_URL}/execution/${executionId}`)
+}
+
+/**
+ * 根据UUID获取执行记录
+ * @param {string} executionUuid - 执行UUID
+ * @returns {Promise<Object>} 执行记录详情
+ */
+export async function getExecutionByUuid(executionUuid) {
+  return get(`${BASE_URL}/execution/uuid/${executionUuid}`)
+}
+
+/**
+ * 获取工作流的执行记录列表
+ * @param {number|string} workflowId - 工作流ID
+ * @param {Object} params - 分页参数
+ * @param {number} [params.page=0] - 页码
+ * @param {number} [params.size=10] - 每页条数
+ * @returns {Promise<Object>} 执行记录分页数据
+ */
+export async function getWorkflowExecutions(workflowId, params = {}) {
+  const { page = 0, size = 10 } = params
+  return get(`${BASE_URL}/${workflowId}/executions`, { page, size })
+}
+
+/**
+ * 中止工作流执行
+ * @param {number|string} executionId - 执行记录ID
+ * @returns {Promise<void>}
+ */
+export async function abortExecution(executionId) {
+  return post(`${BASE_URL}/execution/${executionId}/abort`)
+}
+
 // ==================== 工作流查询 ====================
 
 /**
