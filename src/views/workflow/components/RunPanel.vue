@@ -349,6 +349,19 @@ const buildLogsFromExecution = (execution) => {
         message: `节点执行: ${nodeExec.status} - ${nodeUuid}`,
       })
 
+      // 显示节点输出结果
+      if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+        const outputsStr = Object.entries(nodeExec.outputs)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(', ')
+        logs.push({
+          id: `output-${nodeUuid}`,
+          timestamp: startTime,
+          type: 'info',
+          message: `输出结果: ${outputsStr}`,
+        })
+      }
+
       if (nodeExec.errorMessage) {
         logs.push({
           id: `error-${nodeUuid}`,

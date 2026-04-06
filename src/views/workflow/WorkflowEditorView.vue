@@ -1296,6 +1296,11 @@ const runWorkflow = async () => {
     const executionId = await executeWorkflow(workflow.id, inputData, 'manual')
     addRunLog('success', `执行任务已提交，执行ID: ${executionId}`)
 
+    // 如果日志面板可见，刷新执行记录列表
+    if (logPanelVisible.value) {
+      await loadExecutionList()
+    }
+
     // 轮询执行状态
     let completed = false
     let pollCount = 0
@@ -1309,6 +1314,7 @@ const runWorkflow = async () => {
 
       if (execution.status === 'SUCCESS') {
         completed = true
+        runState.currentExecutionId = executionId
         addRunLog('success', '工作流执行成功')
 
         // 解析节点执行详情
@@ -1323,6 +1329,13 @@ const runWorkflow = async () => {
             if (node) {
               if (nodeExec.status === 'SUCCESS') {
                 addRunLog('success', `节点 "${node.name}" 执行成功`)
+                // 显示节点输出结果
+                if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+                  const outputsStr = Object.entries(nodeExec.outputs)
+                    .map(([key, value]) => `${key}=${value}`)
+                    .join(', ')
+                  addRunLog('info', `输出结果: ${outputsStr}`)
+                }
               } else if (nodeExec.status === 'FAILED') {
                 addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
               }
@@ -1332,13 +1345,23 @@ const runWorkflow = async () => {
 
         workflow.hasRun = true
         runState.currentStep = runState.totalSteps
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
         ElMessage.success('工作流运行成功')
       } else if (execution.status === 'FAILED') {
         completed = true
+        runState.currentExecutionId = executionId
         addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
         ElMessage.error('工作流运行失败')
       } else if (execution.status === 'PARTIAL_SUCCESS') {
         completed = true
+        runState.currentExecutionId = executionId
         addRunLog('warning', '工作流部分执行成功')
 
         // 解析节点执行详情
@@ -1353,6 +1376,13 @@ const runWorkflow = async () => {
             if (node) {
               if (nodeExec.status === 'SUCCESS') {
                 addRunLog('success', `节点 "${node.name}" 执行成功`)
+                // 显示节点输出结果
+                if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+                  const outputsStr = Object.entries(nodeExec.outputs)
+                    .map(([key, value]) => `${key}=${value}`)
+                    .join(', ')
+                  addRunLog('info', `  └─ 输出: ${outputsStr}`)
+                }
               } else if (nodeExec.status === 'FAILED') {
                 addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
               }
@@ -1361,6 +1391,10 @@ const runWorkflow = async () => {
         }
 
         workflow.hasRun = true
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
         ElMessage.warning('工作流部分执行成功')
       }
 
@@ -1673,6 +1707,11 @@ const confirmFileUpload = async () => {
     const executionId = await executeWorkflow(workflow.id, runtimeInputData.value, 'manual')
     addRunLog('success', `执行任务已提交，执行ID: ${executionId}`)
 
+    // 如果日志面板可见，刷新执行记录列表
+    if (logPanelVisible.value) {
+      await loadExecutionList()
+    }
+
     // 轮询执行状态
     let completed = false
     let pollCount = 0
@@ -1686,6 +1725,7 @@ const confirmFileUpload = async () => {
 
       if (execution.status === 'SUCCESS') {
         completed = true
+        runState.currentExecutionId = executionId
         addRunLog('success', '工作流执行成功')
 
         if (execution.nodeExecutions) {
@@ -1709,9 +1749,19 @@ const confirmFileUpload = async () => {
         if (execution.outputs) {
           addRunLog('info', `输出结果: ${JSON.stringify(execution.outputs)}`)
         }
+
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
       } else if (execution.status === 'FAILED') {
         completed = true
+        runState.currentExecutionId = executionId
         addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
       }
     }
 
