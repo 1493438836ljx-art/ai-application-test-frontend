@@ -6,6 +6,7 @@
         class="node-selector-overlay"
         @click.self="handleClose"
         @contextmenu.prevent
+        @wheel.stop
       >
         <div class="node-selector" :style="selectorStyle">
           <!-- 搜索框 -->
@@ -20,7 +21,7 @@
           </div>
 
           <!-- 节点分类列表 -->
-          <div class="node-selector-body">
+          <div class="node-selector-body" @wheel.stop>
             <div
               v-for="category in filteredCategories"
               :key="category.key"

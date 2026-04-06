@@ -519,58 +519,72 @@ const canvasDragState = reactive({
   startOffsetY: 0,
 })
 
-// 直接从节点数据计算端口位置（不依赖 DOM 测量，避免缩放时的时序问题）
+// 获取节点的实际渲染高度（优先从 DOM 获取，失败时回退到计算值）
+const getNodeActualHeight = (node) => {
+  // 尝试从 DOM 获取实际高度
+  if (canvasContainerRef.value) {
+    const nodeEl = canvasContainerRef.value.querySelector(`[data-node-id="${node.id}"]`)
+    if (nodeEl) {
+      return nodeEl.offsetHeight
+    }
+  }
+
+  // 回退：根据节点类型和参数计算高度
+  const inputParams = getNodeInputParams(node)
+  const outputParams = getNodeOutputParams(node)
+
+  // 开始节点
+  if (node.type === 'start') {
+    let height = 56
+    if (outputParams.length > 0) {
+      height += 46
+    }
+    return height
+  }
+
+  // 结束节点
+  if (node.type === 'end') {
+    let height = 56
+    if (inputParams.length > 0) {
+      height += 46
+    }
+    return height
+  }
+
+  // 普通节点
+  let height = 56
+  if (inputParams.length > 0) {
+    height += 46
+  }
+  if (outputParams.length > 0) {
+    height += 46
+  }
+  return height
+}
+
+// 直接从节点数据计算端口位置（优先使用 DOM 实际高度，回退到计算值）
 const getPortPosition = (node, paramIndex, type) => {
   const nodeWidth = 220
+  const nodeHeight = getNodeActualHeight(node)
 
   // 开始节点的输出端口（添加按钮位置）- 在节点右侧垂直居中
   if (node.type === 'start' && type === 'output') {
-    // 开始节点高度：border(2*2) + padding(12*2) + content(28) = 56px
-    // 如果有输出参数，高度增加：margin-top(12) + 内容(20) = 32px
-    const params = getNodeOutputParams(node)
-    const paramsHeight = params.length > 0 ? 32 : 0
-    const nodeHeight = 56 + paramsHeight
     return {
-      x: node.x + nodeWidth - 2, // right: -6px 意味着端口中心在节点右边框内 2px
+      x: node.x + nodeWidth - 2,
       y: node.y + nodeHeight / 2,
     }
   }
 
   // 结束节点的输入端口 - 在节点左侧垂直居中
   if (node.type === 'end' && type === 'input') {
-    // 结束节点高度需要根据参数计算
-    const inputParams = getNodeInputParams(node)
-    // 基础高度：border(4) + padding(24) + header(28) = 56px
-    let nodeHeight = 56
-    if (inputParams.length > 0) {
-      // 参数区域：margin-top(12) + padding-top(10) + border-top(1) + 内容(约22px) ≈ 45px
-      nodeHeight += 45
-    }
     return {
-      x: node.x + 2, // left: -6px 意味着端口中心在节点左边框内 2px
+      x: node.x + 2,
       y: node.y + nodeHeight / 2,
     }
   }
 
   // 输入端口在节点左侧 - 在节点垂直中心位置
   if (type === 'input') {
-    // 计算普通节点的实际高度
-    const inputParams = getNodeInputParams(node)
-    const outputParams = getNodeOutputParams(node)
-
-    // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
-    let nodeHeight = 56
-
-    // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
-    if (inputParams.length > 0) {
-      nodeHeight += 46
-    }
-
-    // 如果有输出参数，增加输出参数区域高度
-    if (outputParams.length > 0) {
-      nodeHeight += 46
-    }
-
     return {
       x: node.x,
       y: node.y + nodeHeight / 2,
@@ -578,23 +592,6 @@ const getPortPosition = (node, paramIndex, type) => {
   }
 
   // 输出端口在节点右侧 - 在节点垂直中心位置
-  // 计算普通节点的实际高度（与输入端口相同）
-  const inputParams = getNodeInputParams(node)
-  const outputParams = getNodeOutputParams(node)
-
-  // 基础高度：border(4) + padding-top(12) + header(28) + padding-bottom(12) = 56px
-  let nodeHeight = 56
-
-  // 如果有输入参数，增加输入参数区域高度：margin-top(12) + height(34) = 46px
-  if (inputParams.length > 0) {
-    nodeHeight += 46
-  }
-
-  // 如果有输出参数，增加输出参数区域高度
-  if (outputParams.length > 0) {
-    nodeHeight += 46
-  }
-
   return {
     x: node.x + nodeWidth,
     y: node.y + nodeHeight / 2,
@@ -885,6 +882,13 @@ const handleFitContent = () => {
 
 // 处理滚轮缩放（以鼠标位置为中心）
 const handleWheel = (event) => {
+  // 检查事件目标是否在弹窗内（节点选择器、运行面板等）
+  const target = event.target
+  if (target) {
+    const inOverlay = target.closest('.node-selector-overlay, .run-panel, .el-dialog, .el-popover, .el-dropdown-menu')
+    if (inOverlay) return
+  }
+
   const delta = event.deltaY > 0 ? -0.1 : 0.1
   const newScale = Math.min(Math.max(canvas.scale + delta, 0.25), 2)
 
@@ -2561,6 +2565,50 @@ const autoLayoutNodes = async () => {
   }
 
   ElMessage.success('布局已调整')
+}
+
+// 将工作流居中显示（不改变节点位置，只调整画布偏移）
+const centerWorkflowInView = async () => {
+  if (nodes.value.length === 0) return
+
+  // 节点尺寸参考
+  const nodeWidth = 220
+  const nodeHeight = 100
+
+  // 计算所有节点的边界框
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity
+  nodes.value.forEach((node) => {
+    if (node.x < minX) minX = node.x
+    if (node.x + nodeWidth > maxX) maxX = node.x + nodeWidth
+    if (node.y < minY) minY = node.y
+    if (node.y + nodeHeight > maxY) maxY = node.y + nodeHeight
+  })
+
+  // 计算节点组的中心点
+  const nodesCenterX = (minX + maxX) / 2
+  const nodesCenterY = (minY + maxY) / 2
+
+  // 获取画布容器尺寸
+  const containerRect = canvasContainerRef.value?.getBoundingClientRect()
+  if (containerRect) {
+    // 计算容器中心点
+    const containerCenterX = containerRect.width / 2
+    const containerCenterY = containerRect.height / 2
+
+    // 计算偏移量，使节点组居中
+    canvas.offsetX = containerCenterX - nodesCenterX * canvas.scale
+    canvas.offsetY = containerCenterY - nodesCenterY * canvas.scale
+  }
+
+  // 等待 DOM 更新后触发连线重新渲染
+  await nextTick()
+  if (connections.value.length > 0) {
+    const temp = [...connections.value]
+    connections.value = temp
+  }
 }
 
 const showRenameDialog = () => {
@@ -5504,6 +5552,9 @@ const loadWorkflowData = async () => {
     }
 
     console.log('工作流数据已刷新，节点数量:', nodes.value.length)
+
+    // 加载完成后将工作流居中显示
+    await centerWorkflowInView()
   } catch (error) {
     console.error('加载工作流失败:', error)
     ElMessage.error('加载工作流失败')
@@ -6039,6 +6090,9 @@ onMounted(async () => {
     const temp = [...connections.value]
     connections.value = temp
   }
+
+  // 加载完成后将工作流居中显示
+  await centerWorkflowInView()
 })
 
 onUnmounted(() => {
@@ -6491,12 +6545,13 @@ onUnmounted(() => {
           v-if="showAddNodePopover"
           class="add-node-popover"
           :style="{ left: `${popoverPosition.x}px`, top: `${popoverPosition.y}px` }"
+          @wheel.stop
         >
           <div class="popover-header">
             <span>选择节点类型</span>
             <el-icon class="close-icon" @click="closeAddPopover"><Close /></el-icon>
           </div>
-          <div class="popover-content">
+          <div class="popover-content" @wheel.stop>
             <template v-for="category in nodeCategories" :key="category.key">
               <div
                 v-if="nodeTypes.filter((n) => n.category === category.key && n.type !== 'start').length > 0"
