@@ -42,6 +42,7 @@
     <!-- 操作按钮 -->
     <el-button text :icon="Grid" @click="handleAutoLayout" title="调整布局">调整布局</el-button>
     <el-button text :icon="VideoPlay" @click="handleRun" title="运行">运行</el-button>
+    <el-button text :icon="Document" @click="handleShowLogs" title="日志">日志</el-button>
     <el-button
       text
       :icon="Upload"
@@ -66,6 +67,7 @@ import {
   VideoPlay,
   Upload,
   DocumentChecked,
+  Document,
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -104,6 +106,7 @@ const emit = defineEmits([
   'fit-content',
   'auto-layout',
   'run',
+  'show-logs',
   'publish',
   'save',
 ])
@@ -150,6 +153,11 @@ const handleAutoLayout = () => {
 // 运行
 const handleRun = () => {
   emit('run')
+}
+
+// 显示日志
+const handleShowLogs = () => {
+  emit('show-logs')
 }
 
 // 发布

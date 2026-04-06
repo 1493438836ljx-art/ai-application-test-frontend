@@ -58,7 +58,7 @@ import { generateUuid } from './utils/uuid'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
 import { getSkillList, getSkillDetail } from '@/api/skill.js'
-import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow, executeWorkflow, getExecutionDetail } from '@/api/workflow.js'
+import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow, executeWorkflow, getExecutionDetail, getWorkflowExecutions } from '@/api/workflow.js'
 import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
 import { getDictionaryColumnsByName } from '@/api/dictionary.js'
 import { uploadFile } from '@/api/file.js'
@@ -1007,6 +1007,13 @@ const saveWorkflow = async () => {
         parentNodeUuid: node.parentNodeId || null,
       }
 
+      // Skill节点需要保存skillId和skillSnapshot
+      if (node.type === 'skill' || node.type.startsWith('skill-')) {
+        baseNode.skillId = node.skillId || null
+        baseNode.skillSnapshot = node.skillSnapshot || null
+        baseNode.nodeCategory = node.nodeCategory || 'EXECUTION'
+      }
+
       // 如果是循环体节点，添加完整属性（包含内部画布的完整数据）
       if (node.type === 'loopBodyCanvas') {
         // 获取循环体画布的引用
@@ -1120,6 +1127,11 @@ const saveWorkflow = async () => {
 
 // 运行工作流
 const runWorkflow = async () => {
+  // 自动显示日志面板
+  logPanelVisible.value = true
+  selectedExecutionId.value = null
+  executionLogs.value = []
+
   runState.isRunning = true
   runState.logs = []
   runState.currentStep = 0
@@ -1957,7 +1969,15 @@ const runState = reactive({
   logs: [],
   currentStep: 0,
   totalSteps: 0,
+  currentExecutionId: null,  // 当前执行ID
 })
+
+// 日志面板显示状态
+const logPanelVisible = ref(false)
+const executionList = ref([])
+const selectedExecutionId = ref(null)
+const executionLogs = ref([])
+const loadingExecutions = ref(false)
 
 // 运行工作流
 const runWorkflowWithLogs = () => {
@@ -2028,6 +2048,177 @@ const stopRun = () => {
 // 清空运行日志
 const clearRunLogs = () => {
   runState.logs = []
+}
+
+// 显示日志面板
+const showLogPanel = async () => {
+  logPanelVisible.value = true
+  await loadExecutionList()
+}
+
+// 隐藏日志面板
+const hideLogPanel = () => {
+  logPanelVisible.value = false
+}
+
+// 加载执行记录列表
+const loadExecutionList = async () => {
+  if (!workflow.id) return
+  try {
+    loadingExecutions.value = true
+    const result = await getWorkflowExecutions(workflow.id, { page: 0, size: 20 })
+    executionList.value = result.content || []
+  } catch (error) {
+    console.error('加载执行记录列表失败:', error)
+  } finally {
+    loadingExecutions.value = false
+  }
+}
+
+// 执行记录选择变化
+const handleExecutionChange = (executionId) => {
+  loadExecutionDetail(executionId)
+}
+
+// 显示的日志（优先显示选中的执行记录日志，否则显示当前运行日志）
+const displayLogs = computed(() => {
+  if (selectedExecutionId.value && executionLogs.value.length > 0) {
+    return executionLogs.value
+  }
+  return runState.logs
+})
+
+// 监听当前执行ID变化，自动加载详情
+watch(() => runState.currentExecutionId, (newId) => {
+  if (newId && logPanelVisible.value) {
+    selectedExecutionId.value = newId
+    loadExecutionDetail(newId)
+  }
+})
+
+// 加载执行详情
+const loadExecutionDetail = async (executionId) => {
+  if (!executionId) return
+  try {
+    loadingExecutions.value = true
+    const execution = await getExecutionDetail(executionId)
+    executionLogs.value = buildLogsFromExecution(execution)
+    selectedExecutionId.value = executionId
+  } catch (error) {
+    console.error('加载执行详情失败:', error)
+    executionLogs.value = []
+  } finally {
+    loadingExecutions.value = false
+  }
+}
+
+// 从执行记录构建日志
+const buildLogsFromExecution = (execution) => {
+  const logs = []
+  const timestamp = formatExecTime(execution.createdAt)
+
+  logs.push({
+    id: `exec-${execution.id}`,
+    timestamp,
+    type: 'info',
+    message: `执行ID: ${execution.id}`,
+  })
+
+  logs.push({
+    id: `status-${execution.id}`,
+    timestamp,
+    type: execution.status === 'SUCCESS' ? 'success' :
+          execution.status === 'FAILED' ? 'error' : 'warning',
+    message: `执行状态: ${formatExecStatus(execution.status)}`,
+  })
+
+  // 解析节点执行详情
+  if (execution.nodeExecutions) {
+    const nodeExecMap = typeof execution.nodeExecutions === 'string'
+      ? JSON.parse(execution.nodeExecutions)
+      : execution.nodeExecutions
+
+    for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+      const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+      const nodeName = node ? node.name : nodeUuid
+      const startTime = nodeExec.startTime ? formatExecTime(nodeExec.startTime) : timestamp
+      const logType = nodeExec.status === 'SUCCESS' ? 'success' :
+                      nodeExec.status === 'FAILED' ? 'error' : 'info'
+
+      logs.push({
+        id: `node-${nodeUuid}`,
+        timestamp: startTime,
+        type: logType,
+        message: `节点 [${nodeName}] - ${formatExecStatus(nodeExec.status)}`,
+      })
+
+      if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+        logs.push({
+          id: `output-${nodeUuid}`,
+          timestamp: startTime,
+          type: 'info',
+          message: `  输出: ${JSON.stringify(nodeExec.outputs)}`,
+        })
+      }
+
+      if (nodeExec.errorMessage) {
+        logs.push({
+          id: `error-${nodeUuid}`,
+          timestamp: startTime,
+          type: 'error',
+          message: `  错误: ${nodeExec.errorMessage}`,
+        })
+      }
+
+      if (nodeExec.durationMs) {
+        logs.push({
+          id: `duration-${nodeUuid}`,
+          timestamp: startTime,
+          type: 'info',
+          message: `  耗时: ${nodeExec.durationMs}ms`,
+        })
+      }
+    }
+  }
+
+  return logs
+}
+
+// 格式化执行状态
+const formatExecStatus = (status) => {
+  const statusMap = {
+    'SUCCESS': '成功',
+    'FAILED': '失败',
+    'PARTIAL_SUCCESS': '部分成功',
+    'RUNNING': '运行中',
+    'PENDING': '等待中',
+  }
+  return statusMap[status] || status
+}
+
+// 格式化执行时间
+const formatExecTime = (time) => {
+  if (!time) return ''
+  const date = new Date(time)
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+// 获取状态标签类型
+const getExecStatusType = (status) => {
+  const typeMap = {
+    'SUCCESS': 'success',
+    'FAILED': 'danger',
+    'PARTIAL_SUCCESS': 'warning',
+    'RUNNING': 'primary',
+    'PENDING': 'info',
+  }
+  return typeMap[status] || 'info'
 }
 
 // 右键菜单状态
@@ -5750,6 +5941,7 @@ onUnmounted(() => {
       <div class="toolbar-divider"></div>
       <el-button text :icon="Grid" @click="autoLayoutNodes">调整布局</el-button>
       <el-button text :icon="VideoPlay" @click="runWorkflow">运行</el-button>
+      <el-button text :icon="Document" @click="showLogPanel">日志</el-button>
       <el-button
         text
         :icon="Upload"
@@ -6295,24 +6487,46 @@ onUnmounted(() => {
         </el-dialog>
 
         <!-- 运行日志面板 -->
-        <div v-if="runState.isRunning" class="debug-panel run-panel">
+        <div v-if="logPanelVisible" class="debug-panel run-panel">
           <div class="debug-header">
             <div class="debug-title">
               <el-icon :size="16" color="#10b981"><VideoPlay /></el-icon>
-              <span>运行日志</span>
+              <span>执行日志</span>
               <span class="debug-node-name">- {{ workflow.name }}</span>
             </div>
             <div class="debug-actions">
-              <el-button text size="small" @click="clearRunLogs">清除日志</el-button>
-              <el-button text size="small" @click="stopRun">
+              <el-select
+                v-model="selectedExecutionId"
+                placeholder="选择执行记录"
+                size="small"
+                style="width: 220px"
+                @change="handleExecutionChange"
+              >
+                <el-option
+                  v-for="exec in executionList"
+                  :key="exec.id"
+                  :label="`#${exec.id} - ${formatExecStatus(exec.status)} - ${formatExecTime(exec.createdAt)}`"
+                  :value="exec.id"
+                >
+                  <div class="execution-option">
+                    <span class="exec-id">#{{ exec.id }}</span>
+                    <el-tag :type="getExecStatusType(exec.status)" size="small">{{ formatExecStatus(exec.status) }}</el-tag>
+                    <span class="exec-time">{{ formatExecTime(exec.createdAt) }}</span>
+                  </div>
+                </el-option>
+              </el-select>
+              <el-button text size="small" @click="loadExecutionList" :loading="loadingExecutions">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+              <el-button text size="small" @click="clearRunLogs">清除</el-button>
+              <el-button text size="small" @click="hideLogPanel">
                 <el-icon><Close /></el-icon>
-                关闭
               </el-button>
             </div>
           </div>
-          <div class="debug-logs">
+          <div class="debug-logs" ref="logsContainer">
             <div
-              v-for="log in runState.logs"
+              v-for="log in displayLogs"
               :key="log.id"
               class="debug-log-item"
               :class="log.type"
@@ -6326,8 +6540,12 @@ onUnmounted(() => {
               </span>
               <span class="log-message">{{ log.message }}</span>
             </div>
-            <div v-if="runState.logs.length === 0" class="debug-empty">
+            <div v-if="displayLogs.length === 0" class="debug-empty">
               暂无运行日志
+            </div>
+            <div v-if="runState.isRunning" class="running-indicator">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>正在执行中...</span>
             </div>
           </div>
         </div>
@@ -9837,6 +10055,43 @@ onUnmounted(() => {
   text-align: center;
   padding: 20px;
   font-style: italic;
+}
+
+.running-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: #409eff;
+  font-size: 13px;
+}
+
+.running-indicator .is-loading {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.execution-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.exec-id {
+  font-weight: 500;
+  color: #303133;
+  min-width: 40px;
+}
+
+.exec-time {
+  color: #909399;
+  font-size: 12px;
+  margin-left: auto;
 }
 
 .debug-logs::-webkit-scrollbar {
