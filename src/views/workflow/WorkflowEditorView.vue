@@ -951,14 +951,68 @@ const handleKeyUp = (event) => {
 }
 
 // 返回列表
-const goBack = () => {
-  router.push('/workflow')
+const goBack = async () => {
+  // 检查是否有未保存的更改
+  if (hasUnsavedChanges.value) {
+    try {
+      await ElMessageBox.confirm(
+        '工作流有未保存的更改，是否保存？',
+        '提示',
+        {
+          confirmButtonText: '保存并离开',
+          cancelButtonText: '不保存离开',
+          distinguishCancelAndClose: true,
+          type: 'warning',
+        }
+      )
+      // 用户点击"保存并离开"
+      await saveWorkflow()
+      router.push('/app/workflow')
+    } catch (action) {
+      if (action === 'cancel') {
+        // 用户点击"不保存离开"
+        router.push('/app/workflow')
+      }
+      // 用户点击关闭按钮，不做任何操作
+    }
+  } else {
+    router.push('/app/workflow')
+  }
 }
 
 // 保存状态
 const saveState = reactive({
   isSaving: false,
   lastSavedAt: null,
+})
+
+// 用于检测未保存更改的状态快照
+const lastSavedState = ref(null)
+
+// 检测是否有未保存的更改
+const hasUnsavedChanges = computed(() => {
+  if (!lastSavedState.value) return false
+
+  const currentState = JSON.stringify({
+    nodes: nodes.value.map(n => ({
+      id: n.id,
+      name: n.name,
+      x: n.x,
+      y: n.y,
+      inputParams: n.inputParams,
+      outputParams: n.outputParams,
+      config: n.config,
+      skillId: n.skillId,
+    })),
+    connections: connections.value.map(c => ({
+      sourceId: c.sourceId,
+      sourcePort: c.sourcePort,
+      targetId: c.targetId,
+      targetPort: c.targetPort,
+    })),
+  })
+
+  return currentState !== lastSavedState.value
 })
 
 // 保存工作流
@@ -1116,6 +1170,27 @@ const saveWorkflow = async () => {
     }
 
     saveState.lastSavedAt = new Date()
+
+    // 更新保存状态快照
+    lastSavedState.value = JSON.stringify({
+      nodes: nodes.value.map(n => ({
+        id: n.id,
+        name: n.name,
+        x: n.x,
+        y: n.y,
+        inputParams: n.inputParams,
+        outputParams: n.outputParams,
+        config: n.config,
+        skillId: n.skillId,
+      })),
+      connections: connections.value.map(c => ({
+        sourceId: c.sourceId,
+        sourcePort: c.sourcePort,
+        targetId: c.targetId,
+        targetPort: c.targetPort,
+      })),
+    })
+
     ElMessage.success('保存成功')
   } catch (error) {
     console.error('保存工作流失败:', error)
@@ -1240,7 +1315,7 @@ const runWorkflow = async () => {
               : execution.nodeExecutions
 
           for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-            const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+            const node = nodes.value.find((n) => n.id === nodeUuid)
             if (node) {
               if (nodeExec.status === 'SUCCESS') {
                 addRunLog('success', `节点 "${node.name}" 执行成功`)
@@ -1270,7 +1345,7 @@ const runWorkflow = async () => {
               : execution.nodeExecutions
 
           for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-            const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+            const node = nodes.value.find((n) => n.id === nodeUuid)
             if (node) {
               if (nodeExec.status === 'SUCCESS') {
                 addRunLog('success', `节点 "${node.name}" 执行成功`)
@@ -1616,7 +1691,7 @@ const confirmFileUpload = async () => {
               : execution.nodeExecutions
 
           for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-            const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+            const node = nodes.value.find((n) => n.id === nodeUuid)
             if (node) {
               if (nodeExec.status === 'SUCCESS') {
                 addRunLog('success', `节点 "${node.name}" 执行成功`)
@@ -2122,6 +2197,7 @@ const buildLogsFromExecution = (execution) => {
     timestamp,
     type: 'info',
     message: `执行ID: ${execution.id}`,
+    sortTime: 0, // 最先显示
   })
 
   logs.push({
@@ -2130,6 +2206,7 @@ const buildLogsFromExecution = (execution) => {
     type: execution.status === 'SUCCESS' ? 'success' :
           execution.status === 'FAILED' ? 'error' : 'warning',
     message: `执行状态: ${formatExecStatus(execution.status)}`,
+    sortTime: 0,
   })
 
   // 解析节点执行详情
@@ -2138,47 +2215,61 @@ const buildLogsFromExecution = (execution) => {
       ? JSON.parse(execution.nodeExecutions)
       : execution.nodeExecutions
 
+    // 收集节点日志，用于排序
+    const nodeLogs = []
+
     for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-      const node = nodes.value.find((n) => n.nodeUuid === nodeUuid)
+      const node = nodes.value.find((n) => n.id === nodeUuid)
       const nodeName = node ? node.name : nodeUuid
+      const startTimeRaw = nodeExec.startTime ? new Date(nodeExec.startTime).getTime() : Date.now()
       const startTime = nodeExec.startTime ? formatExecTime(nodeExec.startTime) : timestamp
       const logType = nodeExec.status === 'SUCCESS' ? 'success' :
                       nodeExec.status === 'FAILED' ? 'error' : 'info'
 
-      logs.push({
+      nodeLogs.push({
         id: `node-${nodeUuid}`,
         timestamp: startTime,
+        sortTime: startTimeRaw,
         type: logType,
         message: `节点 [${nodeName}] - ${formatExecStatus(nodeExec.status)}`,
       })
 
       if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
-        logs.push({
+        nodeLogs.push({
           id: `output-${nodeUuid}`,
           timestamp: startTime,
+          sortTime: startTimeRaw + 1, // 紧随节点日志之后
           type: 'info',
           message: `  输出: ${JSON.stringify(nodeExec.outputs)}`,
         })
       }
 
       if (nodeExec.errorMessage) {
-        logs.push({
+        nodeLogs.push({
           id: `error-${nodeUuid}`,
           timestamp: startTime,
+          sortTime: startTimeRaw + 2,
           type: 'error',
           message: `  错误: ${nodeExec.errorMessage}`,
         })
       }
 
       if (nodeExec.durationMs) {
-        logs.push({
+        nodeLogs.push({
           id: `duration-${nodeUuid}`,
           timestamp: startTime,
+          sortTime: startTimeRaw + 3,
           type: 'info',
           message: `  耗时: ${nodeExec.durationMs}ms`,
         })
       }
     }
+
+    // 按照时间排序节点日志
+    nodeLogs.sort((a, b) => a.sortTime - b.sortTime)
+
+    // 添加排序后的节点日志
+    logs.push(...nodeLogs)
   }
 
   return logs
@@ -2436,6 +2527,31 @@ const autoLayoutNodes = async () => {
       }
     })
   })
+
+  // 计算所有节点的边界框
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  nodes.value.forEach((node) => {
+    if (node.x < minX) minX = node.x
+    if (node.x + nodeWidth > maxX) maxX = node.x + nodeWidth
+    if (node.y < minY) minY = node.y
+    if (node.y + nodeHeight > maxY) maxY = node.y + nodeHeight
+  })
+
+  // 计算节点组的中心点
+  const nodesCenterX = (minX + maxX) / 2
+  const nodesCenterY = (minY + maxY) / 2
+
+  // 获取画布容器尺寸
+  const containerRect = canvasContainerRef.value?.getBoundingClientRect()
+  if (containerRect) {
+    // 计算容器中心点
+    const containerCenterX = containerRect.width / 2
+    const containerCenterY = containerRect.height / 2
+
+    // 计算偏移量，使节点组居中（考虑当前缩放比例）
+    canvas.offsetX = containerCenterX - nodesCenterX * canvas.scale
+    canvas.offsetY = containerCenterY - nodesCenterY * canvas.scale
+  }
 
   // 等待 DOM 更新后触发连线重新渲染
   await nextTick()
@@ -5304,6 +5420,10 @@ const loadWorkflowData = async () => {
             inputParams: parseJsonField(node.inputParams, []),
             outputParams: parseJsonField(node.outputParams, []),
             config: nodeConfig,
+            // Skill节点需要加载skillId和skillSnapshot
+            skillId: node.skillId || null,
+            skillSnapshot: node.skillSnapshot || null,
+            nodeCategory: node.nodeCategory || null,
           }
 
           // 如果是循环体节点，添加完整属性
@@ -5786,6 +5906,10 @@ onMounted(async () => {
               inputParams: parseJsonField(node.inputParams, []),
               outputParams: parseJsonField(node.outputParams, []),
               config: nodeConfig,
+              // Skill节点需要加载skillId和skillSnapshot
+              skillId: node.skillId || null,
+              skillSnapshot: node.skillSnapshot || null,
+              nodeCategory: node.nodeCategory || null,
             }
 
             // 如果是循环体节点，添加完整属性
@@ -5887,6 +6011,26 @@ onMounted(async () => {
 
   // 加载完成，关闭加载状态
   isLoading.value = false
+
+  // 设置初始状态快照（用于检测未保存更改）
+  lastSavedState.value = JSON.stringify({
+    nodes: nodes.value.map(n => ({
+      id: n.id,
+      name: n.name,
+      x: n.x,
+      y: n.y,
+      inputParams: n.inputParams,
+      outputParams: n.outputParams,
+      config: n.config,
+      skillId: n.skillId,
+    })),
+    connections: connections.value.map(c => ({
+      sourceId: c.sourceId,
+      sourcePort: c.sourcePort,
+      targetId: c.targetId,
+      targetPort: c.targetPort,
+    })),
+  })
 
   // 等待 DOM 准备好后触发连线重新计算
   await nextTick()
@@ -6487,7 +6631,7 @@ onUnmounted(() => {
         </el-dialog>
 
         <!-- 运行日志面板 -->
-        <div v-if="logPanelVisible" class="debug-panel run-panel">
+        <div v-if="logPanelVisible" class="debug-panel run-panel" @wheel.stop>
           <div class="debug-header">
             <div class="debug-title">
               <el-icon :size="16" color="#10b981"><VideoPlay /></el-icon>
@@ -6524,7 +6668,7 @@ onUnmounted(() => {
               </el-button>
             </div>
           </div>
-          <div class="debug-logs" ref="logsContainer">
+          <div class="debug-logs" ref="logsContainer" @wheel.stop>
             <div
               v-for="log in displayLogs"
               :key="log.id"

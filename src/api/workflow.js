@@ -167,6 +167,15 @@ export async function abortExecution(executionId) {
   return post(`${BASE_URL}/execution/${executionId}/abort`)
 }
 
+/**
+ * 获取执行输出参数
+ * @param {number|string} executionId - 执行记录ID
+ * @returns {Promise<Object>} 输出参数响应
+ */
+export async function getExecutionOutputs(executionId) {
+  return get(`${BASE_URL}/execution/${executionId}/outputs`)
+}
+
 // ==================== 工作流查询 ====================
 
 /**

@@ -1,7 +1,7 @@
 <template>
   <div class="run-panel-container">
     <!-- 运行日志面板 -->
-    <div v-if="visible" class="debug-panel run-panel">
+    <div v-if="visible" class="debug-panel run-panel" @wheel.stop>
       <div class="debug-header">
         <div class="debug-title">
           <el-icon :size="16" color="#10b981"><VideoPlay /></el-icon>
@@ -38,7 +38,83 @@
           </el-button>
         </div>
       </div>
-      <div class="debug-logs" ref="logsContainer">
+
+      <!-- 执行结果折叠面板 -->
+      <el-collapse v-if="outputParams.length > 0" class="output-collapse">
+        <el-collapse-item title="执行结果" name="outputs">
+          <template #title>
+            <div class="collapse-title">
+              <el-icon><Document /></el-icon>
+              <span>执行结果</span>
+              <el-tag size="small" type="success">{{ outputParams.length }} 个输出</el-tag>
+            </div>
+          </template>
+          <div class="output-params">
+            <div v-for="param in outputParams" :key="param.name" class="param-item">
+              <!-- 文本类型参数 -->
+              <div v-if="isTextType(param)" class="text-param">
+                <div class="param-label">
+                  <span class="label-text">{{ param.label || param.name }}</span>
+                  <el-tag size="small" type="info">{{ param.type }}</el-tag>
+                </div>
+                <div class="param-value">
+                  <pre>{{ formatValue(param.value) }}</pre>
+                </div>
+              </div>
+
+              <!-- 单文件类型参数 -->
+              <div v-else-if="isFileType(param)" class="file-param">
+                <div class="param-label">
+                  <span class="label-text">{{ param.label || param.name }}</span>
+                  <el-tag size="small" type="warning">{{ param.type }}</el-tag>
+                </div>
+                <div class="file-info">
+                  <el-icon><Document /></el-icon>
+                  <span class="file-name">{{ param.fileName || '未知文件' }}</span>
+                  <span class="file-size">({{ formatFileSize(param.fileSize) }})</span>
+                  <el-button type="primary" link size="small" @click="downloadFile(param.downloadUrl)">
+                    下载
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 文件数组类型参数 -->
+              <div v-else-if="isFileArrayType(param)" class="file-array-param">
+                <div class="param-label">
+                  <span class="label-text">{{ param.label || param.name }}</span>
+                  <el-tag size="small" type="warning">{{ param.type }}</el-tag>
+                </div>
+                <div class="file-list">
+                  <div v-for="file in param.files" :key="file.fileId" class="file-item">
+                    <el-icon><Document /></el-icon>
+                    <span class="file-name">{{ file.fileName || '未知文件' }}</span>
+                    <span class="file-size">({{ formatFileSize(file.fileSize) }})</span>
+                    <el-button type="primary" link size="small" @click="downloadFile(file.downloadUrl)">
+                      下载
+                    </el-button>
+                  </div>
+                  <div v-if="!param.files || param.files.length === 0" class="empty-files">
+                    暂无文件
+                  </div>
+                </div>
+              </div>
+
+              <!-- 其他类型（默认显示） -->
+              <div v-else class="text-param">
+                <div class="param-label">
+                  <span class="label-text">{{ param.label || param.name }}</span>
+                  <el-tag size="small">{{ param.type || 'Unknown' }}</el-tag>
+                </div>
+                <div class="param-value">
+                  <pre>{{ formatValue(param.value) }}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+
+      <div class="debug-logs" ref="logsContainer" @wheel.stop>
         <div
           v-for="log in displayLogs"
           :key="log.id"
@@ -68,8 +144,8 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
-import { VideoPlay, Close, Refresh, Loading } from '@element-plus/icons-vue'
-import { getWorkflowExecutions, getExecutionDetail } from '@/api/workflow.js'
+import { VideoPlay, Close, Refresh, Loading, Document } from '@element-plus/icons-vue'
+import { getWorkflowExecutions, getExecutionDetail, getExecutionOutputs } from '@/api/workflow.js'
 
 const props = defineProps({
   // 是否显示
@@ -115,6 +191,7 @@ const loading = ref(false)
 const selectedExecutionId = ref(null)
 const executionList = ref([])
 const executionLogs = ref([])
+const outputParams = ref([])
 
 // 显示的日志
 const displayLogs = computed(() => {
@@ -124,11 +201,57 @@ const displayLogs = computed(() => {
   return props.runLogs
 })
 
+// 判断参数类型
+const isTextType = (param) => {
+  return param.category === 'BASIC' ||
+         (param.type && !param.type.startsWith('File') && !param.type.startsWith('Array<File'))
+}
+
+const isFileType = (param) => {
+  return param.type && param.type.startsWith('File<')
+}
+
+const isFileArrayType = (param) => {
+  return param.type && param.type.startsWith('Array<File<')
+}
+
+// 下载文件
+const downloadFile = (url) => {
+  if (url) {
+    window.open(url, '_blank')
+  }
+}
+
+// 格式化值
+const formatValue = (value) => {
+  if (value === null || value === undefined) {
+    return ''
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value, null, 2)
+  }
+  return String(value)
+}
+
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let i = 0
+  let size = bytes
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024
+    i++
+  }
+  return `${size.toFixed(2)} ${units[i]}`
+}
+
 // 监听当前执行ID变化
 watch(() => props.currentExecutionId, (newId) => {
   if (newId && props.visible) {
     selectedExecutionId.value = newId
     loadExecutionDetail(newId)
+    loadExecutionOutputs(newId)
   }
 })
 
@@ -139,6 +262,7 @@ watch(() => props.visible, async (newVal) => {
     if (props.currentExecutionId) {
       selectedExecutionId.value = props.currentExecutionId
       await loadExecutionDetail(props.currentExecutionId)
+      await loadExecutionOutputs(props.currentExecutionId)
     }
   }
 })
@@ -171,6 +295,19 @@ const loadExecutionDetail = async (executionId) => {
     executionLogs.value = []
   } finally {
     loading.value = false
+  }
+}
+
+// 加载执行输出参数
+const loadExecutionOutputs = async (executionId) => {
+  if (!executionId) return
+
+  try {
+    const response = await getExecutionOutputs(executionId)
+    outputParams.value = response.outputs || []
+  } catch (error) {
+    console.error('加载执行输出失败:', error)
+    outputParams.value = []
   }
 }
 
@@ -212,15 +349,6 @@ const buildLogsFromExecution = (execution) => {
         message: `节点执行: ${nodeExec.status} - ${nodeUuid}`,
       })
 
-      if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
-        logs.push({
-          id: `output-${nodeUuid}`,
-          timestamp: startTime,
-          type: 'info',
-          message: `输出: ${JSON.stringify(nodeExec.outputs)}`,
-        })
-      }
-
       if (nodeExec.errorMessage) {
         logs.push({
           id: `error-${nodeUuid}`,
@@ -238,6 +366,7 @@ const buildLogsFromExecution = (execution) => {
 // 执行记录变化
 const handleExecutionChange = (executionId) => {
   loadExecutionDetail(executionId)
+  loadExecutionOutputs(executionId)
 }
 
 // 刷新
@@ -245,12 +374,14 @@ const handleRefresh = async () => {
   await loadExecutionList()
   if (selectedExecutionId.value) {
     await loadExecutionDetail(selectedExecutionId.value)
+    await loadExecutionOutputs(selectedExecutionId.value)
   }
 }
 
 // 清除运行日志
 const handleClearRunLogs = () => {
   executionLogs.value = []
+  outputParams.value = []
   emit('clear-run-logs')
 }
 
@@ -317,13 +448,15 @@ watch(() => props.runLogs, () => {
   bottom: 20px;
   right: 20px;
   width: 600px;
-  max-height: 400px;
+  max-height: 500px;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   border: 1px solid #e4e7ed;
   overflow: hidden;
   z-index: 100;
+  display: flex;
+  flex-direction: column;
 }
 
 .debug-header {
@@ -333,6 +466,7 @@ watch(() => props.runLogs, () => {
   padding: 12px 16px;
   border-bottom: 1px solid #ebeef5;
   background: #f9fafb;
+  flex-shrink: 0;
 }
 
 .debug-title {
@@ -355,10 +489,112 @@ watch(() => props.runLogs, () => {
   gap: 8px;
 }
 
+/* 执行结果折叠面板 */
+.output-collapse {
+  border: none;
+  flex-shrink: 0;
+}
+
+.output-collapse :deep(.el-collapse-item__header) {
+  padding: 0 16px;
+  height: 40px;
+  background: #fafbfc;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.output-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+
+.output-collapse :deep(.el-collapse-item__content) {
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.collapse-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.output-params {
+  padding: 12px 16px;
+}
+
+.param-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.param-item:last-child {
+  border-bottom: none;
+}
+
+.param-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.label-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.param-value {
+  background: #f5f7fa;
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.param-value pre {
+  margin: 0;
+  font-size: 12px;
+  color: #606266;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.file-info,
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.file-name {
+  font-size: 13px;
+  color: #303133;
+}
+
+.file-size {
+  font-size: 12px;
+  color: #909399;
+}
+
+.file-list {
+  padding-left: 0;
+}
+
+.empty-files {
+  font-size: 12px;
+  color: #909399;
+  padding: 8px 0;
+}
+
+/* 日志区域 */
 .debug-logs {
-  max-height: 320px;
+  flex: 1;
   overflow-y: auto;
   padding: 12px 16px;
+  min-height: 100px;
 }
 
 .debug-log-item {
