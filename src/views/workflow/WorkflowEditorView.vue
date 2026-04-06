@@ -22,6 +22,7 @@ import {
   Edit,
   CopyDocument,
   CircleCheck,
+  CircleClose,
   Grid,
   Upload,
   Tools,
@@ -44,6 +45,7 @@ import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
 import JsonTreeView from '@/components/workflow/JsonTreeView.vue'
 import { useAssociations } from './composables/useAssociations'
 import { useNodeParams, flattenJsonTree, getNodeOutputParams } from './composables/useNodeParams'
+import { useNodeExecutionState } from './composables/useNodeExecutionState'
 // 新增 composables - 可用于渐进式重构
 // import { useAIChat } from './composables/useAIChat'
 // import { useWorkflowExecution } from './composables/useWorkflowExecution'
@@ -58,7 +60,7 @@ import { generateUuid } from './utils/uuid'
 import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
 import { getSkillList, getSkillDetail } from '@/api/skill.js'
-import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, createWorkflow, executeWorkflow, getExecutionDetail, getWorkflowExecutions } from '@/api/workflow.js'
+import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, unpublishWorkflow as unpublishWorkflowApi, createWorkflow, executeWorkflow, getExecutionDetail, getWorkflowExecutions } from '@/api/workflow.js'
 import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
 import { getDictionaryColumnsByName } from '@/api/dictionary.js'
 import { uploadFile } from '@/api/file.js'
@@ -75,6 +77,36 @@ const workflow = reactive({
   published: false,
   hasRun: false, // 是否已成功运行过
 })
+
+// 工作流名称编辑状态
+const isEditingWorkflowName = ref(false)
+const editingWorkflowName = ref('')
+const workflowNameInputRef = ref(null)
+
+// 开始编辑工作流名称
+const startEditWorkflowName = () => {
+  editingWorkflowName.value = workflow.name
+  isEditingWorkflowName.value = true
+  nextTick(() => {
+    workflowNameInputRef.value?.focus()
+    workflowNameInputRef.value?.select()
+  })
+}
+
+// 完成编辑工作流名称
+const finishEditWorkflowName = () => {
+  const newName = editingWorkflowName.value.trim()
+  if (newName && newName !== workflow.name) {
+    workflow.name = newName
+  }
+  isEditingWorkflowName.value = false
+}
+
+// 取消编辑工作流名称
+const cancelEditWorkflowName = () => {
+  isEditingWorkflowName.value = false
+  editingWorkflowName.value = ''
+}
 
 // 画布状态
 const canvas = reactive({
@@ -361,6 +393,19 @@ const { getAssociationPath, createAssociation, deleteAssociation, getLoopBodyIdB
 
 // 使用 useNodeParams composable 获取节点参数函数
 const { formatParamType, getNodeInputParams } = useNodeParams()
+
+// 使用 useNodeExecutionState composable 管理节点执行状态
+const {
+  nodeExecutions,
+  isExecuting,
+  getNodeStatus,
+  updateNodeExecutions,
+  resetNodeExecutions,
+  setExecuting,
+  getNodeStatusClass,
+  getConnectionStatus,
+  getConnectionStatusClass,
+} = useNodeExecutionState()
 
 // 选中的节点
 const selectedNode = ref(null)
@@ -998,6 +1043,7 @@ const hasUnsavedChanges = computed(() => {
   if (!lastSavedState.value) return false
 
   const currentState = JSON.stringify({
+    workflowName: workflow.name,
     nodes: nodes.value.map(n => ({
       id: n.id,
       name: n.name,
@@ -1169,6 +1215,18 @@ const saveWorkflow = async () => {
         router.replace(`/workflow/${createResponse.data.id}?projectName=${encodeURIComponent(workflow.name)}`)
       }
     } else {
+      // 先检查并更新工作流基本信息（名称、描述等）
+      const parsedLastState = lastSavedState.value ? JSON.parse(lastSavedState.value) : null
+      const lastSavedName = parsedLastState?.workflowName
+
+      if (workflow.name !== lastSavedName) {
+        // 名称有变化，先更新基本信息
+        await updateWorkflow(workflowId, {
+          name: workflow.name,
+          description: workflow.description,
+        })
+      }
+
       // 更新工作流数据
       await saveWorkflowData(workflowId, saveData)
     }
@@ -1177,6 +1235,7 @@ const saveWorkflow = async () => {
 
     // 更新保存状态快照
     lastSavedState.value = JSON.stringify({
+      workflowName: workflow.name,
       nodes: nodes.value.map(n => ({
         id: n.id,
         name: n.name,
@@ -1206,6 +1265,9 @@ const saveWorkflow = async () => {
 
 // 运行工作流
 const runWorkflow = async () => {
+  // 重置节点执行状态
+  resetNodeExecutions()
+
   // 自动显示日志面板
   logPanelVisible.value = true
   selectedExecutionId.value = null
@@ -1303,45 +1365,62 @@ const runWorkflow = async () => {
 
     // 轮询执行状态
     let completed = false
-    let pollCount = 0
-    const maxPolls = 60 // 最多轮询60次（约30秒）
+    // 记录已输出日志的节点状态，避免重复输出
+    const loggedNodeStates = {}
 
-    while (!completed && pollCount < maxPolls) {
+    while (!completed) {
       await new Promise((resolve) => setTimeout(resolve, 500))
-      pollCount++
 
       const execution = await getExecutionDetail(executionId)
+
+      // 更新节点执行状态（用于画布上的视觉展示）
+      if (execution.nodeExecutions) {
+        updateNodeExecutions(execution.nodeExecutions)
+
+        // 实时检测节点状态变化并输出日志
+        const nodeExecMap =
+          typeof execution.nodeExecutions === 'string'
+            ? JSON.parse(execution.nodeExecutions)
+            : execution.nodeExecutions
+
+        for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+          const node = nodes.value.find((n) => n.id === nodeUuid)
+          if (node) {
+            const prevState = loggedNodeStates[nodeUuid]
+            const currentState = nodeExec.status
+
+            // 检测状态变化：RUNNING
+            if (currentState === 'RUNNING' && prevState !== 'RUNNING') {
+              addRunLog('info', `节点 "${node.name}" 开始执行...`)
+            }
+
+            // 检测状态变化：SUCCESS（从未完成变为成功）
+            if (currentState === 'SUCCESS' && prevState !== 'SUCCESS') {
+              addRunLog('success', `节点 "${node.name}" 执行成功`)
+              // 显示节点输出结果
+              if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+                const outputsStr = Object.entries(nodeExec.outputs)
+                  .map(([key, value]) => `${key}=${value}`)
+                  .join(', ')
+                addRunLog('info', `  └─ 输出: ${outputsStr}`)
+              }
+            }
+
+            // 检测状态变化：FAILED
+            if (currentState === 'FAILED' && prevState !== 'FAILED') {
+              addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+            }
+
+            // 更新已记录的状态
+            loggedNodeStates[nodeUuid] = currentState
+          }
+        }
+      }
 
       if (execution.status === 'SUCCESS') {
         completed = true
         runState.currentExecutionId = executionId
         addRunLog('success', '工作流执行成功')
-
-        // 解析节点执行详情
-        if (execution.nodeExecutions) {
-          const nodeExecMap =
-            typeof execution.nodeExecutions === 'string'
-              ? JSON.parse(execution.nodeExecutions)
-              : execution.nodeExecutions
-
-          for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-            const node = nodes.value.find((n) => n.id === nodeUuid)
-            if (node) {
-              if (nodeExec.status === 'SUCCESS') {
-                addRunLog('success', `节点 "${node.name}" 执行成功`)
-                // 显示节点输出结果
-                if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
-                  const outputsStr = Object.entries(nodeExec.outputs)
-                    .map(([key, value]) => `${key}=${value}`)
-                    .join(', ')
-                  addRunLog('info', `输出结果: ${outputsStr}`)
-                }
-              } else if (nodeExec.status === 'FAILED') {
-                addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
-              }
-            }
-          }
-        }
 
         workflow.hasRun = true
         runState.currentStep = runState.totalSteps
@@ -1364,32 +1443,6 @@ const runWorkflow = async () => {
         runState.currentExecutionId = executionId
         addRunLog('warning', '工作流部分执行成功')
 
-        // 解析节点执行详情
-        if (execution.nodeExecutions) {
-          const nodeExecMap =
-            typeof execution.nodeExecutions === 'string'
-              ? JSON.parse(execution.nodeExecutions)
-              : execution.nodeExecutions
-
-          for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-            const node = nodes.value.find((n) => n.id === nodeUuid)
-            if (node) {
-              if (nodeExec.status === 'SUCCESS') {
-                addRunLog('success', `节点 "${node.name}" 执行成功`)
-                // 显示节点输出结果
-                if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
-                  const outputsStr = Object.entries(nodeExec.outputs)
-                    .map(([key, value]) => `${key}=${value}`)
-                    .join(', ')
-                  addRunLog('info', `  └─ 输出: ${outputsStr}`)
-                }
-              } else if (nodeExec.status === 'FAILED') {
-                addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
-              }
-            }
-          }
-        }
-
         workflow.hasRun = true
         // 如果日志面板可见，刷新执行记录列表
         if (logPanelVisible.value) {
@@ -1400,14 +1453,9 @@ const runWorkflow = async () => {
 
       // 更新进度
       runState.currentStep = Math.min(
-        Math.floor((pollCount / maxPolls) * runState.totalSteps),
+        runState.currentStep + 1,
         runState.totalSteps - 1
       )
-    }
-
-    if (!completed) {
-      addRunLog('warning', '执行超时，请稍后刷新查看结果')
-      ElMessage.warning('执行超时')
     }
   } catch (error) {
     addRunLog('error', `执行失败: ${error.message || '系统服务异常'}`)
@@ -1429,9 +1477,35 @@ const publishWorkflow = () => {
     cancelButtonText: '取消',
     type: 'info',
   })
-    .then(() => {
-      workflow.published = true
-      ElMessage.success('工作流发布成功')
+    .then(async () => {
+      try {
+        await publishWorkflowApi(workflow.id)
+        workflow.published = true
+        ElMessage.success('工作流发布成功')
+      } catch (error) {
+        ElMessage.error('系统服务异常！')
+      }
+    })
+    .catch(() => {
+      // 用户取消
+    })
+}
+
+// 取消发布工作流
+const unpublishWorkflow = () => {
+  ElMessageBox.confirm('确定要取消发布此工作流吗？', '确认取消发布', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  })
+    .then(async () => {
+      try {
+        await unpublishWorkflowApi(workflow.id)
+        workflow.published = false
+        ElMessage.success('取消发布成功')
+      } catch (error) {
+        ElMessage.error('系统服务异常！')
+      }
     })
     .catch(() => {
       // 用户取消
@@ -1714,37 +1788,57 @@ const confirmFileUpload = async () => {
 
     // 轮询执行状态
     let completed = false
-    let pollCount = 0
-    const maxPolls = 60
+    // 记录已输出日志的节点状态，避免重复输出
+    const loggedNodeStates = {}
 
-    while (!completed && pollCount < maxPolls) {
+    while (!completed) {
       await new Promise((resolve) => setTimeout(resolve, 500))
-      pollCount++
 
       const execution = await getExecutionDetail(executionId)
+
+      // 实时检测节点状态变化并输出日志
+      if (execution.nodeExecutions) {
+        const nodeExecMap =
+          typeof execution.nodeExecutions === 'string'
+            ? JSON.parse(execution.nodeExecutions)
+            : execution.nodeExecutions
+
+        for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+          const node = nodes.value.find((n) => n.id === nodeUuid)
+          if (node) {
+            const prevState = loggedNodeStates[nodeUuid]
+            const currentState = nodeExec.status
+
+            // 检测状态变化：RUNNING
+            if (currentState === 'RUNNING' && prevState !== 'RUNNING') {
+              addRunLog('info', `节点 "${node.name}" 开始执行...`)
+            }
+
+            // 检测状态变化：SUCCESS
+            if (currentState === 'SUCCESS' && prevState !== 'SUCCESS') {
+              addRunLog('success', `节点 "${node.name}" 执行成功`)
+              if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+                const outputsStr = Object.entries(nodeExec.outputs)
+                  .map(([key, value]) => `${key}=${value}`)
+                  .join(', ')
+                addRunLog('info', `  └─ 输出: ${outputsStr}`)
+              }
+            }
+
+            // 检测状态变化：FAILED
+            if (currentState === 'FAILED' && prevState !== 'FAILED') {
+              addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+            }
+
+            loggedNodeStates[nodeUuid] = currentState
+          }
+        }
+      }
 
       if (execution.status === 'SUCCESS') {
         completed = true
         runState.currentExecutionId = executionId
         addRunLog('success', '工作流执行成功')
-
-        if (execution.nodeExecutions) {
-          const nodeExecMap =
-            typeof execution.nodeExecutions === 'string'
-              ? JSON.parse(execution.nodeExecutions)
-              : execution.nodeExecutions
-
-          for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
-            const node = nodes.value.find((n) => n.id === nodeUuid)
-            if (node) {
-              if (nodeExec.status === 'SUCCESS') {
-                addRunLog('success', `节点 "${node.name}" 执行成功`)
-              } else if (nodeExec.status === 'FAILED') {
-                addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
-              }
-            }
-          }
-        }
 
         if (execution.outputs) {
           addRunLog('info', `输出结果: ${JSON.stringify(execution.outputs)}`)
@@ -1763,10 +1857,6 @@ const confirmFileUpload = async () => {
           await loadExecutionList()
         }
       }
-    }
-
-    if (!completed) {
-      addRunLog('warning', '执行超时，请稍后查看执行结果')
     }
   } catch (error) {
     console.error('执行工作流失败:', error)
@@ -2209,8 +2299,13 @@ const handleExecutionChange = (executionId) => {
   loadExecutionDetail(executionId)
 }
 
-// 显示的日志（优先显示选中的执行记录日志，否则显示当前运行日志）
+// 显示的日志（正在执行时显示实时日志，否则显示选中的执行记录日志）
 const displayLogs = computed(() => {
+  // 如果正在执行，优先显示实时日志
+  if (runState.isRunning) {
+    return runState.logs
+  }
+  // 执行完成后，显示选中的执行记录日志
   if (selectedExecutionId.value && executionLogs.value.length > 0) {
     return executionLogs.value
   }
@@ -6115,6 +6210,7 @@ onMounted(async () => {
 
   // 设置初始状态快照（用于检测未保存更改）
   lastSavedState.value = JSON.stringify({
+    workflowName: workflow.name,
     nodes: nodes.value.map(n => ({
       id: n.id,
       name: n.name,
@@ -6160,7 +6256,22 @@ onUnmounted(() => {
       <el-button text :icon="ArrowLeft" @click="goBack" title="返回">返回</el-button>
       <div class="toolbar-divider"></div>
       <div class="workflow-name-display">
-        <span class="workflow-name-text">{{ workflow.name }}</span>
+        <el-input
+          v-if="isEditingWorkflowName"
+          ref="workflowNameInputRef"
+          v-model="editingWorkflowName"
+          size="small"
+          class="workflow-name-input"
+          @blur="finishEditWorkflowName"
+          @keyup.enter="finishEditWorkflowName"
+          @keyup.escape="cancelEditWorkflowName"
+        />
+        <span
+          v-else
+          class="workflow-name-text"
+          @dblclick="startEditWorkflowName"
+          title="双击编辑名称"
+        >{{ workflow.name }}</span>
       </div>
       <div class="toolbar-divider"></div>
       <div class="zoom-controls">
@@ -6191,14 +6302,24 @@ onUnmounted(() => {
       <el-button text :icon="VideoPlay" @click="runWorkflow">运行</el-button>
       <el-button text :icon="Document" @click="showLogPanel">日志</el-button>
       <el-button
+        v-if="!workflow.published"
         text
         :icon="Upload"
-        :disabled="!workflow.hasRun || workflow.published"
+        :disabled="!workflow.hasRun"
         @click="publishWorkflow"
       >
-        {{ workflow.published ? '已发布' : '发布' }}
+        发布
       </el-button>
-      <el-button type="primary" text :icon="DocumentChecked" @click="saveWorkflow">保存</el-button>
+      <el-button
+        v-else
+        text
+        type="warning"
+        :icon="CircleClose"
+        @click="unpublishWorkflow"
+      >
+        取消发布
+      </el-button>
+      <el-button type="primary" text :icon="DocumentChecked" :disabled="!hasUnsavedChanges" @click="saveWorkflow">保存</el-button>
     </div>
 
     <div class="editor-content">
@@ -6252,6 +6373,24 @@ onUnmounted(() => {
                 <stop offset="0%" style="stop-color: #6366f1; stop-opacity: 1" />
                 <stop offset="100%" style="stop-color: #8b5cf6; stop-opacity: 1" />
               </linearGradient>
+              <!-- 连线流动渐变 -->
+              <linearGradient id="connection-flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color: #3b82f6; stop-opacity: 1">
+                  <animate attributeName="offset" values="-1;1" dur="1s" repeatCount="indefinite" />
+                </stop>
+                <stop offset="50%" style="stop-color: #8b5cf6; stop-opacity: 1">
+                  <animate attributeName="offset" values="-0.5;1.5" dur="1s" repeatCount="indefinite" />
+                </stop>
+                <stop offset="100%" style="stop-color: #06b6d4; stop-opacity: 1">
+                  <animate attributeName="offset" values="0;2" dur="1s" repeatCount="indefinite" />
+                </stop>
+              </linearGradient>
+              <!-- 连线流动效果（使用 stroke-dasharray 动画） -->
+              <linearGradient id="connection-active-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color: #3b82f6" />
+                <stop offset="50%" style="stop-color: #8b5cf6" />
+                <stop offset="100%" style="stop-color: #06b6d4" />
+              </linearGradient>
             </defs>
             <!-- 已有连线（起点部分） -->
             <path
@@ -6259,10 +6398,13 @@ onUnmounted(() => {
               :key="conn.id + '-start-' + canvas.scale"
               :d="getConnectionPathPart(conn, 'start')"
               class="connection-path"
-              :class="{
-                selected: selectedConnection?.id === conn.id,
-                hovered: hoveredConnection?.id === conn.id
-              }"
+              :class="[
+                getConnectionStatusClass(conn.sourceId, conn.targetId),
+                {
+                  selected: selectedConnection?.id === conn.id,
+                  hovered: hoveredConnection?.id === conn.id
+                }
+              ]"
               @click.stop="selectConnection(conn, $event)"
               @contextmenu.prevent.stop="showConnectionContextMenu(conn, $event)"
               @mouseenter="handleConnectionMouseEnter(conn)"
@@ -6320,7 +6462,7 @@ onUnmounted(() => {
             :data-node-id="node.id"
             :data-node-type="node.type"
             class="flow-node"
-            :class="{ selected: isNodeSelected(node.id) }"
+            :class="[getNodeStatusClass(node.id), { selected: isNodeSelected(node.id) }]"
             :style="{ left: `${node.x}px`, top: `${node.y}px` }"
             @mousedown="startDragNode(node, $event)"
             @click.stop="handleNodeClick(node, $event)"
@@ -6329,6 +6471,12 @@ onUnmounted(() => {
           >
             <!-- 节点内容 -->
             <div class="node-content">
+              <!-- 节点执行状态指示器 -->
+              <div
+                v-if="getNodeStatus(node.id)"
+                class="node-status-indicator"
+                :class="getNodeStatusClass(node.id)"
+              ></div>
               <div class="node-header">
                 <div
                   class="node-icon"
@@ -6566,16 +6714,19 @@ onUnmounted(() => {
                 <path d="M 0 0 L 5 3 L 0 6" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
               </marker>
             </defs>
-            <!-- 已有连线（终点部分）- 直接在此路径上添加 marker-end -->
+            <!-- 已有连线（终点部分）- 直接在此路��上添加 marker-end -->
             <path
               v-for="conn in connections"
               :key="conn.id + '-end-' + canvas.scale"
               :d="getConnectionPathPart(conn, 'end')"
               class="connection-path"
-              :class="{
-                selected: selectedConnection?.id === conn.id,
-                hovered: hoveredConnection?.id === conn.id
-              }"
+              :class="[
+                getConnectionStatusClass(conn.sourceId, conn.targetId),
+                {
+                  selected: selectedConnection?.id === conn.id,
+                  hovered: hoveredConnection?.id === conn.id
+                }
+              ]"
               :marker-end="selectedConnection?.id === conn.id ? 'url(#arrowhead-top-selected)' : (hoveredConnection?.id === conn.id ? 'url(#arrowhead-top-selected)' : 'url(#arrowhead-top)')"
               :style="{ pointerEvents: 'none' }"
             />
@@ -8784,6 +8935,27 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.workflow-name-text:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.workflow-name-input {
+  width: 200px;
+}
+
+.workflow-name-input :deep(.el-input__wrapper) {
+  padding: 1px 8px;
+}
+
+.workflow-name-input :deep(.el-input__inner) {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .zoom-controls {
@@ -8873,6 +9045,36 @@ onUnmounted(() => {
   opacity: 0.6;
 }
 
+/* ===========================================
+   连线执行状态样式
+   =========================================== */
+
+/* 连线活动状态 - 数据正在流动 */
+.connection-path.connection-status-active {
+  stroke: url(#connection-active-gradient);
+  stroke-width: 3.5;
+  stroke-dasharray: 12, 4;
+  stroke-dashoffset: 0;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.7));
+  animation: connection-dash-flow 0.6s linear infinite;
+}
+
+@keyframes connection-dash-flow {
+  from {
+    stroke-dashoffset: 16;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* 连线完成状态 */
+.connection-path.connection-status-completed {
+  stroke: #10b981;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4));
+}
+
 /* 关联线层（循环节点与循环体画布之间的虚线） */
 .associations-layer {
   position: absolute;
@@ -8958,6 +9160,367 @@ onUnmounted(() => {
 .flow-node.selected {
   border-color: #6366f1;
   box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25);
+}
+
+/* ===========================================
+   节点执行状态样式
+   =========================================== */
+
+/* 执行中状态 - 专业级视觉效果 */
+.flow-node.status-running {
+  border: 3px solid transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(135deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6) border-box;
+  background-size: 100% 100%, 300% 300%;
+  animation:
+    node-border-flow 2s linear infinite,
+    node-glow-pulse 1.5s ease-in-out infinite;
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.1),
+    0 0 30px rgba(59, 130, 246, 0.4),
+    0 0 60px rgba(139, 92, 246, 0.2),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: scale(1.02);
+  z-index: 15;
+}
+
+@keyframes node-border-flow {
+  0% {
+    background-position: 0% 0%, 0% 50%;
+  }
+  50% {
+    background-position: 0% 0%, 100% 50%;
+  }
+  100% {
+    background-position: 0% 0%, 0% 50%;
+  }
+}
+
+@keyframes node-glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(59, 130, 246, 0.1),
+      0 0 30px rgba(59, 130, 246, 0.4),
+      0 0 60px rgba(139, 92, 246, 0.2),
+      0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(59, 130, 246, 0.2),
+      0 0 40px rgba(59, 130, 246, 0.6),
+      0 0 80px rgba(139, 92, 246, 0.35),
+      0 12px 32px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* 执行中节点 - 内部渐变叠加 */
+.flow-node.status-running::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.05) 0%,
+    rgba(139, 92, 246, 0.03) 50%,
+    rgba(6, 182, 212, 0.05) 100%
+  );
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 执行中节点 - 底部流动进度条 */
+.flow-node.status-running::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    #3b82f6 20%,
+    #8b5cf6 50%,
+    #06b6d4 80%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 0 0 8px 8px;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    background-position: 100% 0;
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    background-position: -100% 0;
+    opacity: 0.6;
+  }
+}
+
+/* 执行中节点图标 - 旋转加载动画 */
+.flow-node.status-running .node-icon {
+  animation: icon-loading-spin 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+}
+
+@keyframes icon-loading-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 执行中节点名称 - 微闪烁 */
+.flow-node.status-running .node-name {
+  animation: text-shimmer 2s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    #1e293b 0%,
+    #3b82f6 50%,
+    #1e293b 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes text-shimmer {
+  0%,
+  100% {
+    background-position: 0% center;
+  }
+  50% {
+    background-position: 100% center;
+  }
+}
+
+/* 成功状态 - 专业级视觉效果 */
+.flow-node.status-success {
+  border: 3px solid #10b981;
+  background: linear-gradient(135deg, #fff 0%, #ecfdf5 50%, #d1fae5 100%);
+  box-shadow:
+    0 0 0 2px rgba(16, 185, 129, 0.1),
+    0 0 20px rgba(16, 185, 129, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: scale(1);
+  animation: success-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes success-pop {
+  0% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 失败状态 - 专业级视觉效果 */
+.flow-node.status-failed {
+  border: 3px solid #ef4444;
+  background: linear-gradient(135deg, #fff 0%, #fef2f2 50%, #fee2e2 100%);
+  box-shadow:
+    0 0 0 2px rgba(239, 68, 68, 0.1),
+    0 0 20px rgba(239, 68, 68, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  animation: failed-shake 0.4s ease-in-out;
+}
+
+@keyframes failed-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-2px);
+  }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+/* ===========================================
+   节点状态指示器（右上角徽章）
+   =========================================== */
+
+.node-status-indicator {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* 执行中状态指示器 - 旋转加载动画 */
+.node-status-indicator.status-running {
+  width: 24px;
+  height: 24px;
+  background: conic-gradient(from 0deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6);
+  animation: indicator-rotate 1s linear infinite;
+}
+
+.node-status-indicator.status-running::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background: #fff;
+  border-radius: 50%;
+}
+
+.node-status-indicator.status-running::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-radius: 50%;
+  animation: indicator-pulse-inner 0.8s ease-in-out infinite;
+}
+
+@keyframes indicator-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes indicator-pulse-inner {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+}
+
+/* 成功状态指示器 */
+.node-status-indicator.status-success {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  animation: success-badge-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.node-status-indicator.status-success::after {
+  content: '';
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+@keyframes success-badge-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* 失败状态指示器 */
+.node-status-indicator.status-failed {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+  animation: failed-badge-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.node-status-indicator.status-failed::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  position: relative;
+}
+
+.node-status-indicator.status-failed::before {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.node-status-indicator.status-failed::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+  transform: rotate(-45deg);
+}
+
+@keyframes failed-badge-in {
+  0% {
+    transform: scale(0) rotate(-180deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.node-status-indicator.status-failed {
+  background: #ef4444;
+}
+
+.node-status-indicator.status-failed::after {
+  content: '✕';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* 执行中节点图标旋转动画 */
+.flow-node.status-running .node-icon {
+  animation: icon-spin 1.5s linear infinite;
+}
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .node-content {
