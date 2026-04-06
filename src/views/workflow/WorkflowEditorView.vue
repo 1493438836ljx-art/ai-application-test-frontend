@@ -3557,30 +3557,54 @@ const removeEndInputParam = (index) => {
   selectedNode.value.config.inputParams.splice(index, 1)
 }
 
-// 获取结束节点参数类型显示值
+// 获取结束节点参数类型显示值（级联选择器格式）
 const getEndTypeValue = (param) => {
-  if (!param.type) return 'String'
-  if (param.type === 'Array') return 'Array<String>'
-  if (param.type === 'Dictionary') return 'Dictionary'
-  return param.type
+  if (!param.type) return ['String']
+  if (param.type === 'Array') {
+    return ['Array', param.elementType || 'String']
+  }
+  if (param.type === 'File') {
+    return ['File', param.fileType || 'Txt']
+  }
+  if (param.type === 'Dictionary') {
+    return ['Dictionary', param.dictionaryType || '公文写作数据字典']
+  }
+  return [param.type]
 }
 
-// 处理结束节点类型变化
+// 处理结束节点类型变化（级联选择器格式）
 const handleEndTypeChange = (index, value) => {
   if (!selectedNode.value || !selectedNode.value.config.inputParams) return
   const param = selectedNode.value.config.inputParams[index]
   if (!param) return
 
-  if (value === 'Array<String>') {
+  if (!value || value.length === 0) {
+    param.type = 'String'
+    param.elementType = undefined
+    param.fileType = undefined
+    param.dictionaryType = undefined
+    return
+  }
+  if (value[0] === 'Array') {
     param.type = 'Array'
-    param.elementType = 'String'
-  } else if (value === 'Dictionary') {
+    param.elementType = value[1] || 'String'
+    param.fileType = undefined
+    param.dictionaryType = undefined
+  } else if (value[0] === 'File') {
+    param.type = 'File'
+    param.fileType = value[1] || 'Txt'
+    param.elementType = undefined
+    param.dictionaryType = undefined
+  } else if (value[0] === 'Dictionary') {
     param.type = 'Dictionary'
-    param.dictionaryType = '公文写作数据字典'
+    param.dictionaryType = value[1] || '公文写作数据字典'
+    param.elementType = undefined
+    param.fileType = undefined
   } else {
-    param.type = value
-    delete param.elementType
-    delete param.dictionaryType
+    param.type = value[0]
+    param.elementType = undefined
+    param.fileType = undefined
+    param.dictionaryType = undefined
   }
 }
 
@@ -3802,6 +3826,14 @@ const selectVariable = (variable) => {
     }
   }
 
+  // 处理 Skill 节点的变量选择
+  if (selectedNode.value.type === 'skill' && variableSelectorField.value.startsWith('skill-input-')) {
+    const index = skillVariableSelectorIndex.value
+    if (index !== null && selectedNode.value.inputParams && selectedNode.value.inputParams[index]) {
+      selectedNode.value.inputParams[index].value = variable
+    }
+  }
+
   // 处理文本清洗节点的 cols 变量选择和类型自动调整
   if (selectedNode.value.type === 'textClean' && variableSelectorField.value === 'colsValue') {
     // 检查是否是多选模式（数据字典多列选择）
@@ -3826,6 +3858,8 @@ const selectVariable = (variable) => {
   judgeModelTypeField.value = null
   tableGenerateVariableIndex.value = null
   endVariableIndex.value = null
+  skillVariableSelectorIndex.value = null
+  skillVariableSelectorType.value = null
 }
 
 // 判断类型是否为Dictionary类型
@@ -7807,7 +7841,17 @@ onUnmounted(() => {
                     <template #default="{ row, $index }">
                       <!-- 布尔类型：下拉框 + 关联选择 -->
                       <div v-if="row.type === 'Boolean'" class="param-value-input">
+                        <!-- 如果值是变量引用，显示为文本输入框 -->
+                        <el-input
+                          v-if="row.value && typeof row.value === 'string' && row.value.startsWith('${')"
+                          v-model="row.value"
+                          placeholder="选择"
+                          size="small"
+                          class="param-input-with-btn"
+                          readonly
+                        />
                         <el-select
+                          v-else
                           v-model="row.value"
                           placeholder="选择"
                           size="small"
@@ -7821,7 +7865,17 @@ onUnmounted(() => {
                       </div>
                       <!-- 整数类型 -->
                       <div v-else-if="row.type === 'Integer'" class="param-value-input">
+                        <!-- 如果值是变量引用，显示为文本输入框 -->
+                        <el-input
+                          v-if="row.value && typeof row.value === 'string' && row.value.startsWith('${')"
+                          v-model="row.value"
+                          placeholder="输入数值"
+                          size="small"
+                          class="param-input-with-btn"
+                          readonly
+                        />
                         <el-input-number
+                          v-else
                           v-model="row.value"
                           :min="0"
                           placeholder="输入数值"
@@ -7932,19 +7986,22 @@ onUnmounted(() => {
                       <el-input v-model="row.name" placeholder="请输入变量名" size="small" />
                     </template>
                   </el-table-column>
-                  <el-table-column label="变量类型" width="110">
+                  <el-table-column label="变量类型" min-width="160">
                     <template #default="{ row, $index }">
-                      <el-select
+                      <el-cascader
                         :model-value="getEndTypeValue(row)"
+                        :options="typeOptions"
+                        :props="{
+                          expandTrigger: 'hover',
+                          emitPath: true,
+                          checkStrictly: false,
+                        }"
                         placeholder="选择类型"
                         size="small"
                         style="width: 100%"
+                        clearable
                         @update:model-value="(val) => handleEndTypeChange($index, val)"
-                      >
-                        <el-option label="String" value="String" />
-                        <el-option label="Array<String>" value="Array<String>" />
-                        <el-option label="数据字典" value="Dictionary" />
-                      </el-select>
+                      />
                     </template>
                   </el-table-column>
                   <el-table-column label="变量值" min-width="160">
