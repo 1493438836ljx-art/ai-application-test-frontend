@@ -1465,6 +1465,147 @@ const runWorkflow = async () => {
   }
 }
 
+// 恢复执行状态（页面刷新或重新进入时）
+const resumeExecutionIfNeeded = async () => {
+  if (!workflow.id || workflow.id === 'new') return
+
+  try {
+    // 查询最近正在执行中的记录
+    const result = await getWorkflowExecutions(workflow.id, { page: 0, size: 1 })
+    const executions = result.content || []
+
+    if (executions.length === 0) return
+
+    const latestExecution = executions[0]
+
+    // 检查是否正在执行中（RUNNING 或 PENDING 状态）
+    if (latestExecution.status === 'RUNNING' || latestExecution.status === 'PENDING') {
+      console.log('检测到正在执行中的工作流，恢复执行状态:', latestExecution.id)
+
+      // 恢复执行状态
+      runState.isRunning = true
+      runState.currentExecutionId = latestExecution.id
+      runState.totalSteps = nodes.value.length || 1
+      runState.currentStep = 0
+
+      // 显示日志面板
+      logPanelVisible.value = true
+
+      // 添加恢复日志
+      addRunLog('info', '检测到工作流正在执行中，恢复执行状态...')
+      addRunLog('info', `执行ID: ${latestExecution.id}`)
+
+      // 开始轮询执行状态
+      pollExecutionStatus(latestExecution.id)
+    }
+  } catch (error) {
+    console.error('恢复执行状态失败:', error)
+  }
+}
+
+// 轮询执行状态（可恢复执行时调用）
+const pollExecutionStatus = async (executionId) => {
+  let completed = false
+  // 记录已输出日志的节点状态，避免重复输出
+  const loggedNodeStates = {}
+
+  while (!completed) {
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    try {
+      const execution = await getExecutionDetail(executionId)
+
+      // 更新节点执行状态（用于画布上的视觉展示）
+      if (execution.nodeExecutions) {
+        updateNodeExecutions(execution.nodeExecutions)
+
+        // 实时检测节点状态变化并输出日志
+        const nodeExecMap =
+          typeof execution.nodeExecutions === 'string'
+            ? JSON.parse(execution.nodeExecutions)
+            : execution.nodeExecutions
+
+        for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+          const node = nodes.value.find((n) => n.id === nodeUuid)
+          if (node) {
+            const prevState = loggedNodeStates[nodeUuid]
+            const currentState = nodeExec.status
+
+            // 检测状态变化：RUNNING
+            if (currentState === 'RUNNING' && prevState !== 'RUNNING') {
+              addRunLog('info', `节点 "${node.name}" 开始执行...`)
+            }
+
+            // 检测状态变化：SUCCESS
+            if (currentState === 'SUCCESS' && prevState !== 'SUCCESS') {
+              addRunLog('success', `节点 "${node.name}" 执行成功`)
+              // 显示节点输出结果
+              if (nodeExec.outputs && Object.keys(nodeExec.outputs).length > 0) {
+                const outputsStr = Object.entries(nodeExec.outputs)
+                  .map(([key, value]) => `${key}=${value}`)
+                  .join(', ')
+                addRunLog('info', `  └─ 输出: ${outputsStr}`)
+              }
+            }
+
+            // 检测状态变化：FAILED
+            if (currentState === 'FAILED' && prevState !== 'FAILED') {
+              addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+            }
+
+            loggedNodeStates[nodeUuid] = currentState
+          }
+        }
+      }
+
+      if (execution.status === 'SUCCESS') {
+        completed = true
+        runState.currentExecutionId = executionId
+        addRunLog('success', '工作流执行成功')
+
+        workflow.hasRun = true
+        runState.currentStep = runState.totalSteps
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
+        ElMessage.success('工作流运行成功')
+      } else if (execution.status === 'FAILED') {
+        completed = true
+        runState.currentExecutionId = executionId
+        addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
+        ElMessage.error('工作流运行失败')
+      } else if (execution.status === 'PARTIAL_SUCCESS') {
+        completed = true
+        runState.currentExecutionId = executionId
+        addRunLog('warning', '工作流部分执行成功')
+
+        workflow.hasRun = true
+        // 如果日志面板可见，刷新执行记录列表
+        if (logPanelVisible.value) {
+          await loadExecutionList()
+        }
+        ElMessage.warning('工作流部分执行成功')
+      }
+
+      // 更新进度
+      runState.currentStep = Math.min(
+        runState.currentStep + 1,
+        runState.totalSteps - 1
+      )
+    } catch (error) {
+      console.error('轮询执行状态失败:', error)
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+  }
+
+  runState.isRunning = false
+}
+
 // 发布工作流
 const publishWorkflow = () => {
   if (!workflow.hasRun) {
@@ -6239,6 +6380,9 @@ onMounted(async () => {
 
   // 加载完成后将工作流居中显示
   await centerWorkflowInView()
+
+  // 检查是否有正在执行中的工作流，如果有则恢复执行状态
+  await resumeExecutionIfNeeded()
 })
 
 onUnmounted(() => {
