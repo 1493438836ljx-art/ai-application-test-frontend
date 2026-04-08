@@ -7119,6 +7119,12 @@ onUnmounted(() => {
               >
                 <path d="M 0 0 L 5 3 L 0 6" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
               </marker>
+              <!-- 连线渐变（需要在顶层 SVG 中独立定义，否则 stroke 引用会失效） -->
+              <linearGradient id="connection-active-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color: #3b82f6" />
+                <stop offset="50%" style="stop-color: #8b5cf6" />
+                <stop offset="100%" style="stop-color: #06b6d4" />
+              </linearGradient>
             </defs>
             <!-- 已有连线（终点部分）- 直接在此路��上添加 marker-end -->
             <path
@@ -9520,7 +9526,7 @@ onUnmounted(() => {
   stroke-linejoin: round;
   pointer-events: stroke;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: stroke-width 0.2s ease, filter 0.2s ease;
 }
 
 .connection-path:hover,
@@ -9542,7 +9548,7 @@ onUnmounted(() => {
 
 /* 连线活动状态 - 数据正在流动 */
 .connection-path.connection-status-active {
-  stroke: url(#connection-active-gradient);
+  stroke: #3b82f6;
   stroke-width: 3.5;
   stroke-dasharray: 12, 4;
   stroke-dashoffset: 0;
@@ -9943,35 +9949,8 @@ onUnmounted(() => {
 
 /* 失败状态指示器 */
 .node-status-indicator.status-failed {
-  background: linear-gradient(135deg, #ef4444, #f87171);
+  background: #ef4444;
   animation: failed-badge-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.node-status-indicator.status-failed::after {
-  content: '';
-  width: 8px;
-  height: 8px;
-  position: relative;
-}
-
-.node-status-indicator.status-failed::before {
-  content: '';
-  position: absolute;
-  width: 10px;
-  height: 2px;
-  background: #fff;
-  border-radius: 1px;
-  transform: rotate(45deg);
-}
-
-.node-status-indicator.status-failed::after {
-  content: '';
-  position: absolute;
-  width: 10px;
-  height: 2px;
-  background: #fff;
-  border-radius: 1px;
-  transform: rotate(-45deg);
 }
 
 @keyframes failed-badge-in {
@@ -9983,10 +9962,6 @@ onUnmounted(() => {
     transform: scale(1) rotate(0deg);
     opacity: 1;
   }
-}
-
-.node-status-indicator.status-failed {
-  background: #ef4444;
 }
 
 .node-status-indicator.status-failed::after {
