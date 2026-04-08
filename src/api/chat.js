@@ -2,8 +2,9 @@
  * AI聊天相关API
  */
 import { get, post } from '@/utils/request'
+import { API_BASE_URL } from './config'
 
-const BASE_URL = 'http://localhost:8080/api/chat'
+const BASE_URL = `${API_BASE_URL}/api/chat`
 
 /**
  * 发送消息

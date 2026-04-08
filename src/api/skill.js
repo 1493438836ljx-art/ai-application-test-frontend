@@ -3,8 +3,9 @@
  * 用于获取和管理 Skill 数据
  */
 import { get, post, del, upload, uploadPut } from '@/utils/request'
+import { API_BASE_URL } from './config'
 
-const BASE_URL = 'http://localhost:8080/api/skill'
+const BASE_URL = `${API_BASE_URL}/api/skill`
 
 /**
  * 获取Skill列表（分页）

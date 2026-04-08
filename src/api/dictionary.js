@@ -3,8 +3,9 @@
  * 用于获取和管理数据字典数据
  */
 import { get, post, put, del } from '@/utils/request'
+import { API_BASE_URL } from './config'
 
-const BASE_URL = 'http://localhost:8080/api/dictionaries'
+const BASE_URL = `${API_BASE_URL}/api/dictionaries`
 
 /**
  * 获取数据字典列表

@@ -3,8 +3,9 @@
  * 对接后端 WorkflowController
  */
 import { get, post, put, del } from '@/utils/request'
+import { API_BASE_URL } from './config'
 
-const BASE_URL = '/api/workflow'
+const BASE_URL = `${API_BASE_URL}/api/workflow`
 
 // ==================== 工作流管理 ====================
 

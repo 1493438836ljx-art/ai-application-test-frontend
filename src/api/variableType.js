@@ -3,8 +3,9 @@
  * 用于获取工作流节点变量类型
  */
 import { get } from '@/utils/request'
+import { API_BASE_URL } from './config'
 
-const BASE_URL = 'http://localhost:8080/api/workflow/variable-types'
+const BASE_URL = `${API_BASE_URL}/api/workflow/variable-types`
 
 /**
  * 获取所有启用的变量类型
