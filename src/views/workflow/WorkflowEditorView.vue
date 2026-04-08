@@ -39,6 +39,8 @@ import {
   Refresh,
   WarningFilled,
   Download,
+  CircleCheckFilled,
+  CircleCloseFilled,
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/chat/AiChat.vue'
 import LoopBodyCanvas from './components/LoopBodyCanvas.vue'
@@ -61,7 +63,7 @@ import { useVariableTypeStore } from '@/stores/variableType.js'
 import { getNodeTypes } from '@/api/nodeType.js'
 import { getSkillList, getSkillDetail } from '@/api/skill.js'
 import { getDefaultWorkflow, getWorkflowDetail, saveWorkflowData, updateWorkflow, publishWorkflow as publishWorkflowApi, unpublishWorkflow as unpublishWorkflowApi, createWorkflow, executeWorkflow, getExecutionDetail, getWorkflowExecutions } from '@/api/workflow.js'
-import { sendMessage as sendChatMessage, sendMessageStream } from '@/api/chat.js'
+import { sendMessage as sendChatMessage, sendMessageStream, confirmAction as confirmActionApi } from '@/api/chat.js'
 import { getDictionaryColumnsByName } from '@/api/dictionary.js'
 import { uploadFile } from '@/api/file.js'
 import { marked } from 'marked'
@@ -2029,6 +2031,11 @@ const aiChatIsTyping = ref(false)
 const aiChatMessagesRef = ref(null)
 const aiChatConversationId = ref(null)
 
+// 操作确认对话框状态
+const actionConfirmVisible = ref(false)
+const actionConfirmPending = ref(null) // { pendingActionId, workflowId, actionSummary, message }
+const actionConfirmLoading = ref(false)
+
 // AI聊天框拖拽调整宽度
 const aiChatWidth = ref(400)
 const aiChatMinWidth = 300
@@ -2101,7 +2108,7 @@ const sendAiMessage = async () => {
   scrollAiChatToBottom()
 
   // 创建AI消息占位符
-  const aiMessageId = Date.now() + 1
+  let aiMessageId = Date.now() + 1
   const aiMessage = {
     id: aiMessageId,
     type: 'ai',
@@ -2130,10 +2137,13 @@ const sendAiMessage = async () => {
             aiChatConversationId.value = data.conversationId
           } else if (data.type === 'chunk') {
             // 找到AI消息并追加内容
+            console.log('【调试】收到 chunk, 当前 aiMessageId:', aiMessageId)
             const msg = aiChatMessages.value.find(m => m.id === aiMessageId)
             if (msg) {
               msg.content += data.content
               scrollAiChatToBottom()
+            } else {
+              console.log('【调试】未找到 aiMessageId 对应的消息')
             }
           }
         },
@@ -2142,6 +2152,53 @@ const sendAiMessage = async () => {
           if (data.type === 'workflow_update') {
             handleWorkflowUpdated(data)
           }
+        },
+        onConfirmationRequired: (data) => {
+          console.log('收到操作确认请求:', data)
+          aiChatIsTyping.value = false
+
+          // 设置待确认操作
+          actionConfirmPending.value = {
+            pendingActionId: data.pendingActionId,
+            workflowId: data.workflowId,
+            actionSummary: data.actionSummary,
+            message: data.message
+          }
+          actionConfirmVisible.value = true
+
+          // 在聊天中显示确认请求消息
+          const confirmMsg = {
+            id: Date.now(),
+            type: 'ai',
+            content: '',
+            time: new Date(),
+            isConfirmation: true,
+            confirmationStatus: 'pending',
+            confirmationMessage: data.message || '即将执行修改操作，请确认是否继续？',
+            actionSummary: data.actionSummary || [],
+            pendingActionId: data.pendingActionId,
+          }
+          aiChatMessages.value.push(confirmMsg)
+          nextTick(() => scrollAiChatToBottom())
+        },
+        onActionResult: (data) => {
+          console.log('【调试】收到操作执行结果事件:', data)
+          console.log('【调试】当前 aiMessageId:', aiMessageId)
+          // 创建新的 AI 消息气泡来显示 AI 的总结
+          const newAiMessageId = Date.now()
+          const newAiMessage = {
+            id: newAiMessageId,
+            type: 'ai',
+            content: '',
+            time: new Date(),
+            isStreaming: true,
+          }
+          aiChatMessages.value.push(newAiMessage)
+          aiChatIsTyping.value = true
+          // 更新 aiMessageId 为新的消息 ID
+          aiMessageId = newAiMessageId
+          console.log('【调试】已创建新 AI 消息, 新 aiMessageId:', aiMessageId)
+          nextTick(() => scrollAiChatToBottom())
         },
         onDone: async (data) => {
           aiChatIsTyping.value = false
@@ -2163,12 +2220,6 @@ const sendAiMessage = async () => {
             msg.isStreaming = false
           }
           nextTick(() => scrollAiChatToBottom())
-        },
-        // 新增 onAction 回调处理 workflow_update 事件
-        onAction: (data) => {
-          if (data.type === 'workflow_update') {
-            handleWorkflowUpdated(data)
-          }
         },
       }
     )
@@ -2219,6 +2270,217 @@ const clearAiChat = () => {
       time: new Date(),
     },
   ]
+}
+
+// AI 触发工作流执行后，轮询执行状态更新画布节点状态
+const startPollingExecutionStatusForAI = async (executionId) => {
+  console.log('【AI执行轮询】开始轮询 AI 触发的执行状态, executionId:', executionId, ', 类型:', typeof executionId)
+
+  // 设置执行状态
+  setExecuting(true)
+  resetNodeExecutions()
+  logPanelVisible.value = true
+  runState.isRunning = true
+  runState.logs = []
+  runState.currentStep = 0
+  runState.totalSteps = nodes.value.length
+
+  addRunLog('info', 'AI 触发的工作流开始执行...')
+  addRunLog('info', `执行ID: ${executionId}`)
+
+  let completed = false
+  const loggedNodeStates = {}
+  const startTime = Date.now()
+  const timeout = 5 * 60 * 1000 // 5分钟超时
+
+  while (!completed) {
+    // 检查超时
+    if (Date.now() - startTime > timeout) {
+      addRunLog('warning', '执行超时，请稍后刷新查看结果')
+      ElMessage.warning('执行超时')
+      setExecuting(false)
+      runState.isRunning = false
+      return
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    try {
+      const execution = await getExecutionDetail(executionId)
+      console.log('【AI执行轮询】获取到执行状态:', execution.status, ', nodeExecutions:', execution.nodeExecutions)
+
+      // 更新节点执行状态（用于画布上的视觉展示）
+      if (execution.nodeExecutions) {
+        updateNodeExecutions(execution.nodeExecutions)
+        console.log('【AI执行轮询】已更新节点执行状态')
+
+        // 实时检测节点状态变化并输出日志
+        const nodeExecMap =
+          typeof execution.nodeExecutions === 'string'
+            ? JSON.parse(execution.nodeExecutions)
+            : execution.nodeExecutions
+
+        for (const [nodeUuid, nodeExec] of Object.entries(nodeExecMap)) {
+          const node = nodes.value.find((n) => n.id === nodeUuid)
+          if (node) {
+            const prevState = loggedNodeStates[nodeUuid]
+            const currentState = nodeExec.status
+
+            if (currentState === 'RUNNING' && prevState !== 'RUNNING') {
+              addRunLog('info', `节点 "${node.name}" 开始执行...`)
+            } else if (currentState === 'SUCCESS' && prevState !== 'SUCCESS') {
+              addRunLog('success', `节点 "${node.name}" 执行成功`)
+            } else if (currentState === 'FAILED' && prevState !== 'FAILED') {
+              addRunLog('error', `节点 "${node.name}" 执行失败: ${nodeExec.errorMessage || '未知错误'}`)
+            }
+
+            loggedNodeStates[nodeUuid] = currentState
+          }
+        }
+      }
+
+      // 检查是否执行完成
+      if (execution.status === 'SUCCESS' || execution.status === 'FAILED' || execution.status === 'PARTIAL_SUCCESS') {
+        completed = true
+        setExecuting(false)
+        runState.isRunning = false
+
+        if (execution.status === 'SUCCESS') {
+          addRunLog('success', '工作流执行成功')
+          ElMessage.success('工作流执行成功')
+        } else if (execution.status === 'FAILED') {
+          addRunLog('error', `工作流执行失败: ${execution.errorMessage || '未知错误'}`)
+          ElMessage.error('工作流执行失败')
+        } else if (execution.status === 'PARTIAL_SUCCESS') {
+          addRunLog('warning', '工作流部分执行成功')
+          ElMessage.warning('工作流部分执行成功')
+        }
+
+        // 执行完成后刷新工作流数据
+        await loadWorkflowData()
+      }
+    } catch (error) {
+      console.error('【AI执行轮询】轮询执行状态失败:', error)
+      addRunLog('error', `获取执行状态失败: ${error.message || '系统服务异常'}`)
+    }
+  }
+}
+
+// 确认执行操作
+const confirmAction = async () => {
+  if (!actionConfirmPending.value) return
+
+  const pendingId = actionConfirmPending.value.pendingActionId
+  actionConfirmLoading.value = true
+
+  // 辅助函数：通过 pendingActionId 更新确认卡片状态
+  const updateConfirmationCard = (status, message) => {
+    const index = aiChatMessages.value.findIndex(m => m.pendingActionId === pendingId)
+    if (index !== -1) {
+      const updatedMsg = {
+        ...aiChatMessages.value[index],
+        confirmationStatus: status,
+        resultMessage: message
+      }
+      aiChatMessages.value.splice(index, 1, updatedMsg)
+    }
+  }
+
+  // 更新状态为 loading
+  updateConfirmationCard('loading', '正在执行操作...')
+
+  try {
+    const result = await confirmActionApi({
+      pendingActionId: pendingId,
+      confirmed: true,
+      workflowId: actionConfirmPending.value.workflowId,
+    })
+
+    if (result.success) {
+      ElMessage.success('操作执行成功')
+      // 更新确认卡片状态为成功
+      updateConfirmationCard('success', result.message || '操作执行成功')
+
+      // 刷新工作流数据
+      await loadWorkflowData()
+
+      // 如果返回了 executionId，说明是执行工作流的操作，启动轮询更新画布节点状态
+      if (result.executionId) {
+        console.log('检测到执行工作流，executionId:', result.executionId)
+        startPollingExecutionStatusForAI(result.executionId)
+      }
+    } else {
+      ElMessage.error('操作执行失败: ' + (result.message || '未知错误'))
+      // 更新确认卡片状态为失败
+      updateConfirmationCard('failed', result.message || '操作执行失败')
+    }
+  } catch (error) {
+    ElMessage.error('操作确认失败: ' + error.message)
+    // 更新确认卡片状态为失败
+    updateConfirmationCard('failed', error.message)
+  } finally {
+    actionConfirmLoading.value = false
+    actionConfirmVisible.value = false
+    actionConfirmPending.value = null
+    nextTick(() => scrollAiChatToBottom())
+  }
+}
+
+// 拒绝执行操作
+const rejectAction = async () => {
+  if (!actionConfirmPending.value) return
+
+  actionConfirmLoading.value = true
+
+  const pendingId = actionConfirmPending.value.pendingActionId
+
+  // 辅助函数：通过 pendingActionId 更新确认卡片状态
+  const updateConfirmationCard = (status, message) => {
+    const index = aiChatMessages.value.findIndex(m => m.isConfirmation && m.pendingActionId === pendingId)
+    if (index !== -1) {
+      const updatedMsg = {
+        ...aiChatMessages.value[index],
+        confirmationStatus: status,
+        resultMessage: message
+      }
+      aiChatMessages.value.splice(index, 1, updatedMsg)
+    }
+  }
+
+  // 更新状态为 loading
+  updateConfirmationCard('loading', '正在取消操作...')
+
+  try {
+    await confirmActionApi({
+      pendingActionId: pendingId,
+      confirmed: false,
+    })
+
+    ElMessage.info('操作已取消')
+
+    // 更新确认卡片状态为已取消
+    updateConfirmationCard('cancelled', '操作已取消')
+  } catch (error) {
+    ElMessage.error('取消操作失败: ' + error.message)
+    updateConfirmationCard('failed', error.message)
+  } finally {
+    actionConfirmLoading.value = false
+    actionConfirmVisible.value = false
+    actionConfirmPending.value = null
+    nextTick(() => scrollAiChatToBottom())
+  }
+}
+
+// 获取操作方法的颜色
+const getMethodColor = (method) => {
+  const colors = {
+    'GET': 'success',
+    'POST': 'primary',
+    'PUT': 'warning',
+    'PATCH': 'warning',
+    'DELETE': 'danger'
+  }
+  return colors[method?.toUpperCase()] || 'info'
 }
 
 // 处理工作流更新事件（来自 AI 助手）
@@ -7193,7 +7455,92 @@ onUnmounted(() => {
                 </template>
                 <!-- 有内容时显示消息气泡 -->
                 <template v-else>
-                  <div
+                  <!-- 确认消息卡片 -->
+                  <div v-if="message.isConfirmation" class="ai-message-bubble confirmation-card" :class="message.confirmationStatus">
+                    <!-- 待确认状态 -->
+                    <template v-if="!message.confirmationStatus || message.confirmationStatus === 'pending'">
+                      <div class="confirmation-header">
+                        <el-icon class="warning-icon"><WarningFilled /></el-icon>
+                        <span class="confirmation-title">{{ message.confirmationMessage || '即将执行修改操作，请确认是否继续？' }}</span>
+                      </div>
+                      <div class="confirmation-actions" v-if="message.actionSummary?.length">
+                        <div
+                          v-for="(action, index) in message.actionSummary"
+                          :key="index"
+                          class="action-item"
+                        >
+                          {{ action.description || '执行修改操作' }}
+                        </div>
+                      </div>
+                      <div class="confirmation-buttons">
+                        <el-button size="small" @click="rejectAction" :loading="actionConfirmLoading">取消</el-button>
+                        <el-button type="primary" size="small" @click="confirmAction" :loading="actionConfirmLoading">确认</el-button>
+                      </div>
+                    </template>
+                    <!-- 加载中状态 -->
+                    <template v-else-if="message.confirmationStatus === 'loading'">
+                      <div class="confirmation-header">
+                        <el-icon class="loading-icon is-loading"><Loading /></el-icon>
+                        <span class="confirmation-title">正在执行操作...</span>
+                      </div>
+                    </template>
+                    <!-- 成功状态 -->
+                    <template v-else-if="message.confirmationStatus === 'success'">
+                      <div class="confirmation-header success">
+                        <el-icon class="success-icon"><CircleCheckFilled /></el-icon>
+                        <span class="confirmation-title">✅ 操作已执行成功</span>
+                      </div>
+                      <div class="confirmation-actions completed" v-if="message.actionSummary?.length">
+                        <div
+                          v-for="(action, index) in message.actionSummary"
+                          :key="index"
+                          class="action-item"
+                        >
+                          {{ action.description || '执行修改操作' }}
+                        </div>
+                      </div>
+                      <div class="confirmation-result" v-if="message.resultMessage">
+                        {{ message.resultMessage }}
+                      </div>
+                    </template>
+                    <!-- 取消状态 -->
+                    <template v-else-if="message.confirmationStatus === 'cancelled'">
+                      <div class="confirmation-header cancelled">
+                        <el-icon class="cancel-icon"><CircleCloseFilled /></el-icon>
+                        <span class="confirmation-title">❌ 操作已取消</span>
+                      </div>
+                      <div class="confirmation-actions cancelled" v-if="message.actionSummary?.length">
+                        <div
+                          v-for="(action, index) in message.actionSummary"
+                          :key="index"
+                          class="action-item"
+                        >
+                          {{ action.description || '执行修改操作' }}
+                        </div>
+                      </div>
+                    </template>
+                    <!-- 失败状态 -->
+                    <template v-else-if="message.confirmationStatus === 'failed'">
+                      <div class="confirmation-header failed">
+                        <el-icon class="fail-icon"><CircleCloseFilled /></el-icon>
+                        <span class="confirmation-title">⚠️ 操作执行失败</span>
+                      </div>
+                      <div class="confirmation-actions failed" v-if="message.actionSummary?.length">
+                        <div
+                          v-for="(action, index) in message.actionSummary"
+                          :key="index"
+                          class="action-item"
+                        >
+                          {{ action.description || '执行修改操作' }}
+                        </div>
+                      </div>
+                      <div class="confirmation-result error" v-if="message.resultMessage">
+                        {{ message.resultMessage }}
+                      </div>
+                    </template>
+                  </div>
+                  <!-- 普通消息气泡 -->
+                  <div v-else
                     class="ai-message-bubble"
                     :class="{ 'streaming': message.isStreaming }"
                     v-html="message.type === 'ai' ? renderMarkdown(message.content) : message.content"
@@ -12869,6 +13216,158 @@ onUnmounted(() => {
   font-size: 14px;
   color: #374151;
   font-weight: 500;
+}
+
+/* AI 消息中的确认卡片样式 */
+.confirmation-card {
+  background: linear-gradient(135deg, #fef9e7 0%, #fff8e1 100%);
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 8px 0;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+  transition: all 0.3s ease;
+}
+
+/* 成功状态 */
+.confirmation-card.success {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border-color: #10b981;
+}
+
+/* 取消状态 */
+.confirmation-card.cancelled {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-color: #9ca3af;
+}
+
+/* 失败状态 */
+.confirmation-card.failed {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #ef4444;
+}
+
+.confirmation-card .confirmation-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.confirmation-card .confirmation-header.success,
+.confirmation-card .confirmation-header.cancelled,
+.confirmation-card .confirmation-header.failed {
+  margin-bottom: 0;
+}
+
+.confirmation-card .warning-icon {
+  font-size: 20px;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.confirmation-card .loading-icon {
+  font-size: 20px;
+  color: #3b82f6;
+  flex-shrink: 0;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.confirmation-card .success-icon {
+  font-size: 20px;
+  color: #10b981;
+  flex-shrink: 0;
+}
+
+.confirmation-card .cancel-icon,
+.confirmation-card .fail-icon {
+  font-size: 20px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.confirmation-card .fail-icon {
+  color: #ef4444;
+}
+
+.confirmation-card .confirmation-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #92400e;
+}
+
+.confirmation-card.success .confirmation-title {
+  color: #065f46;
+}
+
+.confirmation-card.cancelled .confirmation-title {
+  color: #6b7280;
+}
+
+.confirmation-card.failed .confirmation-title {
+  color: #dc2626;
+}
+
+.confirmation-card .confirmation-actions {
+  margin-bottom: 12px;
+  padding-left: 30px;
+}
+
+.confirmation-card .action-item {
+  font-size: 13px;
+  color: #374151;
+  padding: 6px 0;
+  position: relative;
+}
+
+.confirmation-card .action-item::before {
+  content: '•';
+  position: absolute;
+  left: -14px;
+  color: #f59e0b;
+}
+
+/* 已完成状态的操作列表 */
+.confirmation-card .confirmation-actions.completed .action-item::before {
+  color: #10b981;
+}
+
+/* 失败状态的操作列表 */
+.confirmation-card .confirmation-actions.failed .action-item::before {
+  color: #ef4444;
+}
+
+/* 取消状态的操作列表 */
+.confirmation-card .confirmation-actions.cancelled .action-item::before {
+  color: #9ca3af;
+}
+
+.confirmation-card .confirmation-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(245, 158, 11, 0.3);
+}
+
+.confirmation-card .confirmation-result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.confirmation-card .confirmation-result.error {
+  background: rgba(254, 226, 226, 0.5);
+  color: #dc2626;
 }
 </style>
 

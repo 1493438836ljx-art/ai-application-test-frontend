@@ -26,11 +26,12 @@ export async function sendMessage(params) {
  * @param {function} callbacks.onStart - 会话开始时的回调
  * @param {function} callbacks.onChunk - 接收到数据块时的回调
  * @param {function} callbacks.onAction - 接收到action事件时的回调（如workflow_update）
+ * @param {function} callbacks.onConfirmationRequired - 接收到确认请求时的回调
  * @param {function} callbacks.onDone - 完成时的回调
  * @param {function} callbacks.onError - 错误时的回调
  * @returns {Promise<void>}
  */
-export async function sendMessageStream(params, { onStart, onChunk, onAction, onDone, onError }) {
+export async function sendMessageStream(params, { onStart, onChunk, onAction, onConfirmationRequired, onActionResult, onDone, onError }) {
   try {
     const response = await fetch(`${BASE_URL}/stream`, {
       method: 'POST',
@@ -83,6 +84,13 @@ export async function sendMessageStream(params, { onStart, onChunk, onAction, on
               } else if (parsed.type === 'workflow_update') {
                 // 处理工作流更新事件
                 onAction && onAction(parsed)
+              } else if (parsed.type === 'confirmation_required') {
+                // 处理操作确认请求
+                onConfirmationRequired && onConfirmationRequired(parsed)
+              } else if (parsed.type === 'action_result') {
+                // 处理操作执行结果，表示确认后的 AI 总结即将开始
+                console.log('【chat.js】收到 action_result 事件:', parsed)
+                onActionResult && onActionResult(parsed)
               } else if (parsed.type === 'done') {
                 onDone && onDone(parsed)
               } else if (parsed.type === 'error') {
@@ -184,4 +192,30 @@ export async function getQuickQuestions() {
  */
 export async function submitFeedback(messageUuid, params) {
   return post(`${BASE_URL}/messages/${messageUuid}/feedback`, params)
+}
+
+/**
+ * 确认执行操作
+ * <p>
+ * 当 AI 请求执行非查询操作时，前端会收到 confirmation_required 事件。
+ * 用户确认后，调用此 API 执行操作。
+ * </p>
+ * @param {Object} params - 确认参数
+ * @param {string} params.pendingActionId - 待确认操作ID
+ * @param {boolean} params.confirmed - 是否确认执行
+ * @param {string} params.conversationId - 会话ID（可选）
+ * @param {number} params.workflowId - 工作流ID（可选）
+ * @returns {Promise<Object>} 确认响应
+ */
+export async function confirmAction(params) {
+  return post(`${BASE_URL}/action/confirm`, params)
+}
+
+/**
+ * 获取待确认操作详情
+ * @param {string} pendingActionId - 待确认操作ID
+ * @returns {Promise<Object>} 操作详情
+ */
+export async function getPendingAction(pendingActionId) {
+  return get(`${BASE_URL}/action/pending/${pendingActionId}`)
 }
