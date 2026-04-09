@@ -2090,6 +2090,19 @@ const aiReplies = [
   '明白了，让我帮你处理这个需求。',
 ]
 
+// AI输入框自动调整高度
+const aiChatInputRef = ref(null)
+watch(aiChatInput, () => {
+  nextTick(() => {
+    const textarea = aiChatInputRef.value?.$el?.querySelector('textarea')
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    const scrollH = textarea.scrollHeight
+    const newHeight = Math.max(40, Math.min(scrollH, 120))
+    textarea.style.height = newHeight + 'px'
+  })
+})
+
 // 发送AI消息（流式）
 const sendAiMessage = async () => {
   const content = aiChatInput.value.trim()
@@ -7299,7 +7312,7 @@ onUnmounted(() => {
         </el-dialog>
 
         <!-- 运行日志面板 -->
-        <div v-if="logPanelVisible" class="debug-panel run-panel" @wheel.stop>
+        <div v-if="logPanelVisible" class="debug-panel run-panel" @wheel.stop @mousedown.stop>
           <div class="debug-header">
             <div class="debug-title">
               <el-icon :size="16" color="#10b981"><VideoPlay /></el-icon>
@@ -7365,9 +7378,10 @@ onUnmounted(() => {
         <!-- 右侧AI助手面板 -->
         <div
           class="ai-chat-panel"
-          :class="{ expanded: aiChatExpanded, dragging: isDraggingAiChat }"
+          :class="{ expanded: aiChatExpanded, dragging: isDraggingAiChat, 'has-log-panel': logPanelVisible }"
           :style="aiChatExpanded ? { width: aiChatWidth + 'px' } : {}"
           @mousedown.stop
+          @wheel.stop
         >
           <!-- 折叠状态下的折叠指示器 - AI助手风格设计 -->
           <div
@@ -7572,14 +7586,17 @@ onUnmounted(() => {
             </div>
             <div class="ai-chat-input-area" :class="{ 'is-disabled': aiChatIsTyping }">
               <el-input
+                ref="aiChatInputRef"
                 v-model="aiChatInput"
                 type="textarea"
-                :autosize="{ minRows: 1, maxRows: 4 }"
+                :rows="1"
                 placeholder="输入消息，按 Enter 发送，Shift+Enter 换行..."
                 size="small"
                 @keydown.enter.exact.prevent="sendAiMessage"
               />
-              <el-button type="primary" size="small" :icon="Position" @click="sendAiMessage" :disabled="!aiChatInput.trim() || aiChatIsTyping">发送</el-button>
+              <div class="ai-chat-send-row">
+                <el-button type="primary" size="small" :icon="Position" @click="sendAiMessage" :disabled="!aiChatInput.trim() || aiChatIsTyping">发送</el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -11225,6 +11242,7 @@ onUnmounted(() => {
   flex-direction: column;
   max-height: 280px;
   animation: debug-panel-in 0.3s ease;
+  cursor: default !important;
 }
 
 @keyframes debug-panel-in {
@@ -11496,11 +11514,12 @@ onUnmounted(() => {
   flex-direction: column;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: visible;
+  cursor: default !important;
 }
 
 .ai-chat-panel.expanded {
   width: 400px;
-  height: 70vh;
+  height: 58vh;
   top: 50%;
   transform: translateY(-50%);
   max-height: none;
@@ -11510,6 +11529,14 @@ onUnmounted(() => {
   border-radius: 12px 0 0 12px;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+}
+
+.ai-chat-panel.expanded.has-log-panel {
+  top: 60px;
+  bottom: 0;
+  height: auto;
+  max-height: calc(100vh - 350px);
+  transform: none;
 }
 
 .ai-chat-panel.dragging {
@@ -12252,26 +12279,30 @@ onUnmounted(() => {
 
 .ai-chat-input-area {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: 10px;
-  padding: 16px;
+  padding: 12px 16px;
   background: #fff;
   border-top: 1px solid #e5e7eb;
   transition: opacity 0.3s ease;
-  min-height: 70px;
 }
 
-.ai-chat-input-area .el-input {
+.ai-chat-send-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-chat-input-area .el-textarea {
   flex: 1;
 }
 
-.ai-chat-input-area .el-input :deep(.el-input__wrapper) {
-  padding: 8px 12px;
-  min-height: 40px;
-}
-
-.ai-chat-input-area .el-input :deep(.el-input__inner) {
+.ai-chat-input-area :deep(.el-textarea__inner) {
+  min-height: 40px !important;
+  max-height: 120px !important;
+  overflow-y: auto;
   line-height: 1.5;
+  resize: none;
+  scrollbar-width: thin;
 }
 
 .ai-chat-input-area .send-icon {
