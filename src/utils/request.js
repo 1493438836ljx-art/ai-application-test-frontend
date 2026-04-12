@@ -30,7 +30,7 @@ async function request(url, options = {}) {
     if (contentType && contentType.includes('application/json')) {
       return await response.json()
     }
-    return response
+    return await response.text()
   } catch (error) {
     // 统一提示系统服务异常
     ElMessage.error('系统服务异常！')

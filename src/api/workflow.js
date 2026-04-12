@@ -125,7 +125,9 @@ export async function saveWorkflowData(id, data) {
  * @returns {Promise<number>} 执行记录ID
  */
 export async function executeWorkflow(id, inputData = {}, triggeredBy = 'manual') {
-  return post(`${BASE_URL}/${id}/execute?triggeredBy=${triggeredBy}`, inputData)
+  const result = await post(`${BASE_URL}/${id}/execute?triggeredBy=${triggeredBy}`, inputData)
+  // 兼容 text/plain（字符串）和 application/json（对象）两种响应格式
+  return typeof result === 'object' && result !== null ? result.executionId : result
 }
 
 /**
